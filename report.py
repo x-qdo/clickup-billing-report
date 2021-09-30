@@ -4,7 +4,7 @@ import argparse
 
 BILLABLE_ID = '074e1387-e7b8-41c6-92db-fbada8f8486c'
 INVOICED_ID = '82aa8afc-dbd2-4a80-b4ae-cccd06ba774b'
-
+REPORTED_BY = 'eb30f61c-dbad-4ad4-896d-15d2a239cb69'
 
 def generate_report(list_id, token, refresh_invoiced=False):
     r = requests.get(
@@ -36,10 +36,16 @@ def generate_report(list_id, token, refresh_invoiced=False):
             'name': task['name'],
             'priority': task['priority']['priority'] if task['priority'] else '-',
             'tags': ", ".join([t['name'] for t in task['tags']]),
+            'reporter': custom_fields[REPORTED_BY] if REPORTED_BY in custom_fields else '-',
             'billable': float(custom_fields[BILLABLE_ID] if BILLABLE_ID in custom_fields else 0),
             'invoiced': float(custom_fields[INVOICED_ID] if INVOICED_ID in custom_fields else 0),
         }
         reported_task['monthly_reported'] = reported_task['billable'] - reported_task['invoiced']
+
+        # skip 0 invoced tasks
+        if reported_task['monthly_reported'] == 0:
+            continue
+        
         reported_tasks.append(reported_task)
 
         if refresh_invoiced:
@@ -68,7 +74,7 @@ args = parser.parse_args()
 
 data = generate_report(**vars(args))
 
-full_report = ['custom_id', 'name', 'priority', 'tags', 'billable', 'invoiced', 'monthly_reported']
+full_report = ['custom_id', 'name', 'priority', 'tags', 'billable', 'reporter', 'invoiced', 'monthly_reported']
 csv_file = "insly_report.csv"
 try:
     with open(csv_file, 'w') as csvfile:
