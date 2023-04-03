@@ -1,0 +1,83 @@
+# Default values for clickup-report.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: clickup-report
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: "nginx"
+  publicUrl: ""
+  annotations:
+     kubernetes.io/tls-acme: "true"
+     cert-manager.io/cluster-issuer: letsencrypt-prod
+     # QDO VPN, QDO Office
+     nginx.ingress.kubernetes.io/whitelist-source-range: 157.230.79.191/32,31.202.12.37/32,90.190.96.203/32,54.247.139.26/32
+  hosts: []
+  tls: []
+
+
+resources:
+   requests:
+     cpu: 30m
+     memory: 64Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+tolerations:
+- key: arch
+  value: arm
+  operator: Equal
+  effect: NoSchedule
+
+nodeSelector:
+   kubernetes.io/arch: arm64
+
+affinity: {}
+
+secret:
+  oauth:
+    clientID: ""
+    clientSecret: ""
+  session: ""
+
