@@ -23,9 +23,21 @@ def generate_csv_data(data, fieldnames):
     return output.getvalue()
 
 
+def is_token_valid():
+    if 'access_token' not in session:
+        return False
+
+    token = session['access_token']
+    response = requests.get(
+        'https://api.clickup.com/api/v2/user',
+        headers={'Authorization': token, 'Content-Type': 'application/json'}
+    )
+    return response.status_code == 200
+
+
 @app.route('/')
 def home():
-    if 'access_token' in session:
+    if is_token_valid():
         return redirect(url_for('generate_report_route'))
     client_id = os.environ['CLICKUP_CLIENT_ID']
     callback_url = url_for('callback', _external=True)
@@ -34,7 +46,7 @@ def home():
 
 @app.route('/report', methods=['GET', 'POST'])
 def generate_report_route():
-    if 'access_token' not in session:
+    if not is_token_valid():
         return redirect(url_for('home'))
 
     if request.method == 'POST':
