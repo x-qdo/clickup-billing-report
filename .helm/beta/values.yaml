@@ -1,0 +1,14 @@
+ingress:
+  publicUrl: "clickup-reports.beta.hdo.ee"
+  hosts:
+    - host: clickup-reports.beta.hdo.ee
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: clickup-reports.beta.hdo.ee
+      hosts:
+        - clickup-reports.beta.hdo.ee
+secret:
+  oauth:
+    clientID: "MBQHI8A1FDZMMIH9CQUWMESVCA3MS93D"

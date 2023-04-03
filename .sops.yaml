@@ -1,0 +1,6 @@
+---
+creation_rules:
+  - path_regex: '.helm/prod/*'
+    kms: 'arn:aws:kms:eu-west-1:898445925860:alias/vault-prod'
+  - path_regex: '.helm/beta/*'
+    kms: 'arn:aws:kms:eu-west-1:096568705843:alias/vault-beta'
