@@ -1,10 +1,9 @@
-import csv
 import requests
-import argparse
 
 BILLABLE_ID = '074e1387-e7b8-41c6-92db-fbada8f8486c'
 INVOICED_ID = '82aa8afc-dbd2-4a80-b4ae-cccd06ba774b'
 REPORTED_BY = 'eb30f61c-dbad-4ad4-896d-15d2a239cb69'
+
 
 def generate_report(list_id, token, refresh_invoiced=False):
     r = requests.get(
@@ -45,7 +44,7 @@ def generate_report(list_id, token, refresh_invoiced=False):
         # skip 0 invoced tasks
         if reported_task['monthly_reported'] == 0:
             continue
-        
+
         reported_tasks.append(reported_task)
 
         if refresh_invoiced:
@@ -63,24 +62,24 @@ def generate_report(list_id, token, refresh_invoiced=False):
     reported_tasks.append(totals)
     return reported_tasks
 
-
-parser = argparse.ArgumentParser(description='ClickUp report builder')
-parser.add_argument('--token', required=True, help='Personal auth topic. Can be found '
-                                                   'https://app.clickup.com/2454960/settings/apps')
-parser.add_argument('--list-id', default='10940440')
-parser.add_argument('--refresh-invoiced', action='store_true')
-
-args = parser.parse_args()
-
-data = generate_report(**vars(args))
-
-full_report = ['custom_id', 'name', 'priority', 'tags', 'billable', 'reporter', 'invoiced', 'monthly_reported']
-csv_file = "insly_report.csv"
-try:
-    with open(csv_file, 'w') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=full_report)
-        writer.writeheader()
-        for data in data:
-            writer.writerow(data)
-except IOError:
-    print("I/O error")
+#
+# parser = argparse.ArgumentParser(description='ClickUp report builder')
+# parser.add_argument('--token', required=True, help='Personal auth topic. Can be found '
+#                                                    'https://app.clickup.com/2454960/settings/apps')
+# parser.add_argument('--list-id', default='10940440')
+# parser.add_argument('--refresh-invoiced', action='store_true')
+#
+# args = parser.parse_args()
+#
+# data = generate_report(**vars(args))
+#
+# full_report = ['custom_id', 'name', 'priority', 'tags', 'billable', 'reporter', 'invoiced', 'monthly_reported']
+# csv_file = "insly_report.csv"
+# try:
+#     with open(csv_file, 'w') as csvfile:
+#         writer = csv.DictWriter(csvfile, fieldnames=full_report)
+#         writer.writeheader()
+#         for data in data:
+#             writer.writerow(data)
+# except IOError:
+#     print("I/O error")
