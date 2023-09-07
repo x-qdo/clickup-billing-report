@@ -1,3 +1,4 @@
+import datetime
 import io
 import os
 
@@ -7,6 +8,8 @@ import requests
 
 from disable_logging import disable_logging
 from report import generate_report
+from timetracking_report import calculate_personal_timereport, fetch_and_process_tasks, fetch_and_process_time_report, \
+    generate_final_report, update_custom_fields
 
 app = Flask(__name__)
 app.secret_key = os.environ['CLICKUP_SESSION_SECRET']
@@ -44,7 +47,7 @@ def home():
     return render_template('index.html', client_id=client_id, callback_url=callback_url)
 
 
-@app.route('/report', methods=['GET', 'POST'])
+@app.route('/report/billable', methods=['GET', 'POST'])
 def generate_report_route():
     if not is_token_valid():
         return redirect(url_for('home'))
@@ -63,7 +66,43 @@ def generate_report_route():
         response.headers.set('Content-Disposition', 'attachment', filename="report.csv")
         return response
 
-    return render_template('report.html')
+    return render_template('billable_report.html')
+
+
+@app.route('/report/timetrack', methods=['GET', 'POST'])
+def generate_timetrack_route():
+    if not is_token_valid():
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        selected_month = int(request.form['month'])
+        refresh_billable = request.form.get('refresh_billable') == 'on'
+        token = session['access_token']
+
+        tasks_data = fetch_and_process_tasks(token)
+        time_report_data = fetch_and_process_time_report(token, selected_month, tasks_data)
+        personal_timereport = calculate_personal_timereport(time_report_data)
+        final_report = generate_final_report(tasks_data, time_report_data)
+        if refresh_billable:
+            update_custom_fields(token, final_report)
+
+        return render_template(
+            'time_tracking_report.html',
+            final_report=final_report.to_html(classes='table table-striped', index=False),
+            personal_timereport=personal_timereport.to_html(classes='table table-striped', index=False),
+            total=final_report['AdjustedDuration'].sum()
+        )
+
+    months = []
+    for i in range(1, 12):
+        month_name = datetime.date(1900, i, 1).strftime('%B')
+        months.append((i, month_name))
+    return render_template('time_tracking.html', months=months, current_month=datetime.datetime.now().strftime("%B"))
+
+
+@app.route('/report', methods=['GET'])
+def reports_list_route():
+    return render_template('reports_list.html')
 
 
 @app.route('/callback')
@@ -93,7 +132,7 @@ def callback():
     access_token = r.json()['access_token']
     session['access_token'] = access_token
 
-    return redirect(url_for('generate_report_route'))
+    return redirect(url_for('reports_list_route'))
 
 
 @app.route("/healthz", methods=["GET"])
