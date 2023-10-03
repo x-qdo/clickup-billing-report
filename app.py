@@ -94,7 +94,7 @@ def generate_timetrack_route():
         )
 
     months = []
-    for i in range(1, 12):
+    for i in range(1, 13):
         month_name = datetime.date(1900, i, 1).strftime('%B')
         months.append((i, month_name))
     return render_template('time_tracking.html', months=months, current_month=datetime.datetime.now().strftime("%B"))
