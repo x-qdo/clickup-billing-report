@@ -2,9 +2,7 @@ from pprint import pprint
 import pandas as pd
 import ast
 import requests
-import os
 import datetime
-import json
 
 team_id = "2454960"
 list_id = "10940440"
@@ -67,7 +65,7 @@ def fetch_and_process_tasks(token):
         lambda x: extract_custom_field_value(x, 'InvoicedHours'))
     tasks_data['BillableHours'] = tasks_data['custom_fields'].apply(
         lambda x: extract_custom_field_value(x, 'BillableHours'))
-    tasks_data['InvoicedHours'] = pd.to_numeric(tasks_data['InvoicedHours'], errors='coerce')
+    tasks_data['InvoicedHours'] = pd.to_numeric(tasks_data['InvoicedHours'], errors='coerce').fillna(0)
 
     tasks_data = tasks_data.drop(columns=['custom_fields'])
 
@@ -145,11 +143,8 @@ def generate_final_report(tasks_data, time_report_data):
 def update_custom_fields(token, final_report):
     print("Updating tasks")
     for index, row in final_report.iterrows():
-        print("updating " + row['custom_id'])
-        url = "https://api.clickup.com/api/v2/task/" + row['id']
-        payload = json.dumps({"custom_fields": [
-            {"id": BILLABLE_ID, "value": row['AdjustedDuration']},
-            {"id": INVOICED_ID, "value": row['InvoicedHours']},
-        ]})
-        response = requests.put(url, headers={'Authorization': token, 'Content-Type': 'application/json'}, data=payload)
+        print("updating " + row['custom_id'] + " to " + str(row['InvoicedHours'] + row['AdjustedDuration']))
+        url = "https://api.clickup.com/api/v2/task/" + row['id'] + "/field/" + BILLABLE_ID
+        response = requests.post(url, headers={'Authorization': token, 'Content-Type': 'application/json'},
+                                 json={"value": str(row['InvoicedHours'] + row['AdjustedDuration'])})
         print(response.json())

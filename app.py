@@ -41,7 +41,7 @@ def is_token_valid():
 @app.route('/')
 def home():
     if is_token_valid():
-        return redirect(url_for('generate_report_route'))
+        return redirect(url_for('reports_list_route'))
     client_id = os.environ['CLICKUP_CLIENT_ID']
     callback_url = url_for('callback', _external=True)
     return render_template('index.html', client_id=client_id, callback_url=callback_url)
