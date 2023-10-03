@@ -6,6 +6,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, R
 import csv
 import requests
 
+from demo_bot import generate_demo_list, LIST_ID, TEAM_ID
 from disable_logging import disable_logging
 from report import generate_report
 from timetracking_report import calculate_personal_timereport, fetch_and_process_tasks, fetch_and_process_time_report, \
@@ -45,6 +46,26 @@ def home():
     client_id = os.environ['CLICKUP_CLIENT_ID']
     callback_url = url_for('callback', _external=True)
     return render_template('index.html', client_id=client_id, callback_url=callback_url)
+
+
+@app.route('/report/demo', methods=['GET'])
+def generate_demo_report_route():
+    if not is_token_valid():
+        return redirect(url_for('home'))
+
+    today = datetime.datetime.now()
+    week_number = today.strftime('%U')
+    title = f"{today.strftime('%Y-%m-%d')}: Week {week_number} Demo List"
+    slack_message = (f"@here Today is {today.strftime('%A')}! Get ready to demo your work today.\n"
+                     f"Make sure your work is included in {title}!")
+
+    md = generate_demo_list(session['access_token'], LIST_ID, TEAM_ID)
+    return render_template(
+        'demo_report.html',
+        md=md,
+        title=title,
+        slack_message=slack_message,
+    )
 
 
 @app.route('/report/billable', methods=['GET', 'POST'])
