@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/python:3.11-bullseye
+FROM public.ecr.aws/docker/library/python:3.12-bullseye
 
 ENV POETRY_VERSION='1.2.2' \
     POETRY_HOME=/etc/poetry \
