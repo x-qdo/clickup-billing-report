@@ -79,8 +79,7 @@ def fetch_and_process_time_report(token, selected_month, tasks_data):
 
     id_list = unique_assignees_df['id'].tolist()
 
-    selected_date = datetime.datetime.now().replace(month=selected_month)
-    first_day_of_current_month = selected_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    first_day_of_current_month = datetime.datetime.now().replace(day=1, hour=23, minute=59, second=59, microsecond=0, month=selected_month)
     last_day_of_prev_month = first_day_of_current_month - datetime.timedelta(days=1)
     first_day_of_prev_month = last_day_of_prev_month.replace(day=1)
 
