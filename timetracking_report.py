@@ -14,7 +14,8 @@ developer_coefficients = {
     'Yauheni Batsianouski': 1,
     'Evgeny Goroshko': 1,
     'Vladimir Kuznichenkov': 1,
-    'Linke Dmitry': 4,
+    'Vlad Nikiforov': 1,
+    'Linke Dmitry': 3,
     'Alexander Pavlov': 4,
     'Alex Pavlovsky': 4,
     'Alexey Gorovenko': 3,
@@ -73,6 +74,12 @@ def fetch_and_process_tasks(token):
 
 
 def fetch_and_process_time_report(token, selected_month, tasks_data):
+    def calculate_adjusted_duration(row):
+        if row['user.username'] in developer_coefficients:
+            return row['duration'] / 60 / 60 / 1000 / developer_coefficients[row['user.username']]
+        else:
+            return row['duration'] / 60 / 60 / 1000 / 1  # Default coefficient is 1 if username not found
+
     all_assignees = [assignee for sublist in tasks_data['assignees'].tolist() for assignee in sublist]
     assignees_df = pd.DataFrame(all_assignees)
     unique_assignees_df = assignees_df.drop_duplicates()
@@ -107,14 +114,14 @@ def fetch_and_process_time_report(token, selected_month, tasks_data):
                                                                             'start',
                                                                             'end', 'task_url'])
     time_report_data['duration'] = pd.to_numeric(time_report_data['duration'], errors='coerce')
-    time_report_data['AdjustedDuration'] = time_report_data.apply(
-        lambda row: row['duration'] / 60 / 60 / 1000 / developer_coefficients[row['user.username']], axis=1)
+    time_report_data['TotalDuration'] = time_report_data.apply(lambda row: row['duration'] / 60 / 60 / 1000, axis=1)
+    time_report_data['AdjustedDuration'] = time_report_data.apply(calculate_adjusted_duration, axis=1)
 
     return time_report_data
 
 
 def calculate_personal_timereport(time_report_data):
-    final_report = time_report_data.groupby(['user.username'])['AdjustedDuration'].sum().reset_index()
+    final_report = time_report_data.groupby(['user.username'])[['AdjustedDuration', 'TotalDuration']].sum().reset_index()
     return final_report.sort_values('AdjustedDuration', ascending=False)
 
 
