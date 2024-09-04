@@ -1,6 +1,7 @@
 import datetime
 import io
 import os
+import pandas as pd
 
 from flask import Flask, render_template, request, redirect, url_for, session, Response
 import csv
@@ -10,6 +11,7 @@ from demo_bot import generate_demo_list, LIST_ID, TEAM_ID
 from disable_logging import disable_logging
 from report import generate_report
 from timetracking_report import generate_timetracking_report
+from toggl_sync import sync_clickup_to_toggl
 
 app = Flask(__name__)
 app.secret_key = os.environ['CLICKUP_SESSION_SECRET']
@@ -86,7 +88,7 @@ def generate_report_route():
         response.headers.set('Content-Disposition', 'attachment', filename="report.csv")
         return response
 
-    return render_template('billable_report.html')
+    return render_template('billable_report.html', title="Generate Billable Report")
 
 
 @app.route('/report/timetrack', methods=['GET', 'POST'])
@@ -112,12 +114,34 @@ def generate_timetrack_route():
     for i in range(1, 13):
         month_name = datetime.date(1900, i, 1).strftime('%B')
         months.append((i, month_name))
-    return render_template('time_tracking.html', months=months, current_month=datetime.datetime.now().strftime("%B"))
+    return render_template('time_tracking.html', title="Generate Time Tracking Report", months=months, current_month=datetime.datetime.now().strftime("%B"))
+
+
+@app.route('/sync/toggl', methods=['GET', 'POST'])
+def sync_toggl_route():
+    if not is_token_valid():
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        start_date = int(datetime.datetime.strptime(request.form['start_date'], '%Y-%m-%d').timestamp() * 1000)
+        end_date = int(datetime.datetime.strptime(request.form['end_date'], '%Y-%m-%d').timestamp() * 1000)
+        toggl_api_token = request.form['toggl_api_token']
+
+        token = session['access_token']
+        result = sync_clickup_to_toggl(token, toggl_api_token, start_date, end_date)
+
+        if isinstance(result, pd.DataFrame):
+            result_table = result.to_html(classes='table table-striped', index=False, escape=False, render_links=True)
+            return render_template('toggl_sync_results.html', result_table=result_table)
+        else:
+            return result  # This will be the "All entries synced successfully" message
+
+    return render_template('toggl_sync.html', title="ClickUp to Toggl Time Sync")
 
 
 @app.route('/report', methods=['GET'])
 def reports_list_route():
-    return render_template('reports_list.html')
+    return render_template('reports_list.html', title="Report Links")
 
 
 @app.route('/callback')
