@@ -3,22 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Timerack Report</title>
+    <title>Timetrack Report</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 </head>
 <body>
-    <div class="container mt-5">
-        <h2>Per person Report</h2>
-        <div class="table-responsive">
-            {{ personal_timereport|safe }}
-        </div>
+<div class="container mt-5">
+    <h2>Per Person Report</h2>
+    <div class="table-responsive">
+        {{ personal_timereport|safe }}
     </div>
-    <div class="container mt-5">
-        <h2>Report</h2><h3>Total [{{ total }}]</h3>
-        <div class="table-responsive">
-            {{ final_report|safe }}
-        </div>
+</div>
+<div class="container mt-5">
+    <h2>Final Report</h2>
+    <div class="table-responsive">
+        {{ final_report|safe }}
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</div>
+<div class="container mt-5">
+    <h2>Total Hours per Client</h2>
+    <div class="table-responsive">
+        {{ total|safe }}
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

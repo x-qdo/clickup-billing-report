@@ -9,8 +9,7 @@ import requests
 from demo_bot import generate_demo_list, LIST_ID, TEAM_ID
 from disable_logging import disable_logging
 from report import generate_report
-from timetracking_report import calculate_personal_timereport, fetch_and_process_tasks, fetch_and_process_time_report, \
-    generate_final_report, update_custom_fields
+from timetracking_report import generate_timetracking_report
 
 app = Flask(__name__)
 app.secret_key = os.environ['CLICKUP_SESSION_SECRET']
@@ -100,18 +99,13 @@ def generate_timetrack_route():
         refresh_billable = request.form.get('refresh_billable') == 'on'
         token = session['access_token']
 
-        tasks_data = fetch_and_process_tasks(token)
-        time_report_data = fetch_and_process_time_report(token, selected_month, tasks_data)
-        personal_timereport = calculate_personal_timereport(time_report_data)
-        final_report = generate_final_report(tasks_data, time_report_data)
-        if refresh_billable:
-            update_custom_fields(token, final_report)
+        report_data = generate_timetracking_report(token, selected_month, refresh_billable)
 
         return render_template(
             'time_tracking_report.html',
-            final_report=final_report.to_html(classes='table table-striped', index=False),
-            personal_timereport=personal_timereport.to_html(classes='table table-striped', index=False),
-            total=final_report['AdjustedDuration'].sum()
+            final_report=report_data['final_report'].to_html(classes='table table-striped', index=False),
+            personal_timereport=report_data['personal_timereport'].to_html(classes='table table-striped', index=False),
+            total=report_data['total'].to_html(classes='table table-striped', index=False)
         )
 
     months = []
