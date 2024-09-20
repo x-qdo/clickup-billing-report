@@ -1,6 +1,6 @@
 FROM public.ecr.aws/docker/library/python:3.11-bullseye
 
-ENV POETRY_VERSION='1.2.2' \
+ENV POETRY_VERSION='1.8.3' \
     POETRY_HOME=/etc/poetry \
     PATH="/etc/poetry/bin:${PATH}" \
     POETRY_VIRTUALENVS_CREATE=false
