@@ -11,13 +11,13 @@
     <div class="container">
         <form id="generate-report-form" method="post" class="mb-3" action="{{ url_for('generate_timetrack_route') }}">
             <div class="mb-3">
-                <label for="month" class="form-label">Select Month:</label>
-                <select name="month" id="month" class="form-control">
-                    {% for month, month_name in months %}
-                        {% if month_name == current_month %}
-                            <option value="{{ month }}" selected>{{ month_name }}</option>
+                <label for="report_date" class="form-label">Select Report Month:</label>
+                <select name="report_date" id="report_date" class="form-control">
+                    {% for date, label in available_dates %}
+                        {% if date == current_date %}
+                            <option value="{{ date }}" selected>{{ label }}</option>
                         {% else %}
-                            <option value="{{ month }}">{{ month_name }}</option>
+                            <option value="{{ date }}">{{ label }}</option>
                         {% endif %}
                     {% endfor %}
                 </select>

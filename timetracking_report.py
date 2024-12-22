@@ -13,8 +13,8 @@ developer_coefficients = {
     'Evgeny Goroshko': 1,
     'Vladimir Kuznichenkov': 1,
     'Vlad Nikiforov': 1,
-    'Linke Dmitry': 3,
-    'Alexander Pavlov': 4,
+    'Dmitro Linke': 3,
+    'Alexander Pavlov': 3,
     'Alexey Gorovenko': 3,
 }
 
@@ -87,7 +87,7 @@ def fetch_and_process_tasks(token: str, client: Client) -> pd.DataFrame:
     return tasks_data
 
 
-def fetch_and_process_time_report(token: str, selected_month: int, tasks_data: pd.DataFrame,
+def fetch_and_process_time_report(token: str, selected_date: datetime.datetime, tasks_data: pd.DataFrame,
                                   client: Client) -> pd.DataFrame:
     def calculate_adjusted_duration(row):
         if row['user.username'] in developer_coefficients:
@@ -101,36 +101,28 @@ def fetch_and_process_time_report(token: str, selected_month: int, tasks_data: p
 
     id_list = unique_assignees_df['id'].tolist()
 
-    first_day_of_current_month = datetime.datetime.now().replace(
-        day=1, hour=23, minute=59, second=59, microsecond=0,
-        month=selected_month)
-    last_day_of_prev_month = first_day_of_current_month - datetime.timedelta(days=1)
-    first_day_of_prev_month = last_day_of_prev_month.replace(day=1)
+    # Calculate first and last day of selected month
+    first_day_of_month = selected_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if selected_date.month == 12:
+        last_day_of_month = selected_date.replace(year=selected_date.year + 1, month=1, day=1) - datetime.timedelta(days=1)
+    else:
+        last_day_of_month = selected_date.replace(month=selected_date.month + 1, day=1) - datetime.timedelta(days=1)
+    last_day_of_month = last_day_of_month.replace(hour=23, minute=59, second=59, microsecond=999999)
 
     url = f"https://api.clickup.com/api/v2/team/{client.team_id}/time_entries"
     response = requests.get(url, headers={'Authorization': token, 'Content-Type': 'application/json'},
                             params={
-                                "start_date": int(first_day_of_prev_month.timestamp() * 1000),
-                                "end_date": int(last_day_of_prev_month.timestamp() * 1000),
+                                "start_date": int(first_day_of_month.timestamp() * 1000),
+                                "end_date": int(last_day_of_month.timestamp() * 1000),
                                 "assignee": ','.join([str(x) for x in id_list]),
                                 "include_task_tags": "true",
                                 "list_id": client.list_id,
                             })
     time_report = response.json()
-    time_report_data = (pd.json_normalize(time_report['data']).drop(columns=[
-        'id',
-        'task.status.status', 'task.status.color',
-        'task.status.type',
-        'task.status.orderindex',
-        'task.custom_type',
-        'user.email', 'user.color', 'user.initials',
-        'user.profilePicture',
-        'task_location.list_id',
-        'task_location.folder_id',
-        'task_location.space_id', 'billable',
-        'description', 'tags', 'source', 'at',
-        'start',
-        'end', 'task_url']))
+    if len(time_report['data']) == 0:
+        return pd.DataFrame()
+
+    time_report_data = (pd.json_normalize(time_report['data'])[['user.username', 'duration', 'task.id', 'task.custom_id', 'task.name']])
     time_report_data['duration'] = pd.to_numeric(time_report_data['duration'], errors='coerce')
     time_report_data['TotalDuration'] = time_report_data.apply(lambda row: row['duration'] / 60 / 60 / 1000, axis=1)
     time_report_data['AdjustedDuration'] = time_report_data.apply(calculate_adjusted_duration, axis=1)
@@ -188,14 +180,14 @@ def update_custom_fields(token: str, final_report: pd.DataFrame, clients: List[C
             print(f"Client not found for task {row['custom_id']}")
 
 
-def generate_timetracking_report(token: str, selected_month: int, refresh_billable: bool = False) -> Dict[
+def generate_timetracking_report(token: str, selected_date: datetime.datetime, refresh_billable: bool = False) -> Dict[
     str, pd.DataFrame]:
     all_tasks_data = pd.DataFrame()
     all_time_report_data = pd.DataFrame()
 
     for client in clients:
         tasks_data = fetch_and_process_tasks(token, client)
-        time_report_data = fetch_and_process_time_report(token, selected_month, tasks_data, client)
+        time_report_data = fetch_and_process_time_report(token, selected_date, tasks_data, client)
 
         all_tasks_data = pd.concat([all_tasks_data, tasks_data])
         all_time_report_data = pd.concat([all_time_report_data, time_report_data])

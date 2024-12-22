@@ -97,24 +97,34 @@ def generate_timetrack_route():
         return redirect(url_for('home'))
 
     if request.method == 'POST':
-        selected_month = int(request.form['month'])
+        selected_date = datetime.datetime.strptime(request.form['report_date'], '%Y-%m')
         refresh_billable = request.form.get('refresh_billable') == 'on'
         token = session['access_token']
 
-        report_data = generate_timetracking_report(token, selected_month, refresh_billable)
+        report_data = generate_timetracking_report(token, selected_date, refresh_billable)
 
         return render_template(
             'time_tracking_report.html',
-            final_report=report_data['final_report'].to_html(classes='table table-striped', index=False),
-            personal_timereport=report_data['personal_timereport'].to_html(classes='table table-striped', index=False),
-            total=report_data['total'].to_html(classes='table table-striped', index=False)
+            final_report=report_data['final_report'].to_html(classes='table table-striped table-hover', index=False, float_format=lambda x: '%.2f' % x),
+            personal_timereport=report_data['personal_timereport'].to_html(classes='table table-striped table-hover', index=False, float_format=lambda x: '%.2f' % x),
+            total=report_data['total'].to_html(classes='table table-striped table-hover', index=False, float_format=lambda x: '%.2f' % x)
         )
 
-    months = []
-    for i in range(1, 13):
-        month_name = datetime.date(1900, i, 1).strftime('%B')
-        months.append((i, month_name))
-    return render_template('time_tracking.html', title="Generate Time Tracking Report", months=months, current_month=datetime.datetime.now().strftime("%B"))
+    # Generate list of available dates (current month and 3 months back)
+    current_date = datetime.datetime.now().replace(day=1)
+    available_dates = []
+    for i in range(3, -1, -1):
+        date = current_date - datetime.timedelta(days=i*30)
+        date_str = date.strftime('%Y-%m')
+        label = date.strftime('%B %Y')
+        available_dates.append((date_str, label))
+    
+    return render_template(
+        'time_tracking.html',
+        title="Generate Time Tracking Report",
+        available_dates=available_dates,
+        current_date=current_date.strftime('%Y-%m')
+    )
 
 
 @app.route('/sync/toggl', methods=['GET', 'POST'])
