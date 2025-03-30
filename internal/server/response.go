@@ -11,10 +11,10 @@ import (
 // Common headers for JSON responses
 var jsonHeaders = map[string]string{
 	"Content-Type":                     "application/json",
-	"Access-Control-Allow-Origin":      "*", // Adjust for production (specific origins)
+	"Access-Control-Allow-Origin":      "*",
 	"Access-Control-Allow-Methods":     "GET, POST, PUT, DELETE, OPTIONS",
-	"Access-Control-Allow-Headers":     "Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token, Cookie", // Added Cookie
-	"Access-Control-Allow-Credentials": "true",                                                                             // Important for cookies
+	"Access-Control-Allow-Headers":     "Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token, Cookie",
+	"Access-Control-Allow-Credentials": "true",
 }
 
 // ErrorResponse defines the structure for JSON error responses.
@@ -28,19 +28,17 @@ type ErrorResponse struct {
 func JSONResponse(statusCode int, payload interface{}) (events.APIGatewayProxyResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		// This is an internal server error (failed to marshal response)
 		logrus.WithError(err).Error("Failed to marshal JSON response payload")
-		// Return error response directly without calling ErrorJSONResponse to avoid loops
 		return events.APIGatewayProxyResponse{
 			StatusCode: http.StatusInternalServerError,
 			Headers:    jsonHeaders,
 			Body:       `{"error": "Internal Server Error", "message": "Failed to generate response"}`,
-		}, nil // Return nil error for Lambda handler
+		}, nil
 	}
 
 	return events.APIGatewayProxyResponse{
 		StatusCode: statusCode,
-		Headers:    jsonHeaders, // Use common JSON headers
+		Headers:    jsonHeaders,
 		Body:       string(body),
 	}, nil
 }
@@ -63,9 +61,6 @@ func ErrorJSONResponse(statusCode int, errorType string, message string) (events
 	return JSONResponse(statusCode, payload)
 }
 
-// RedirectResponse is REMOVED. Use HttpResponseWriter in handlers for redirects.
-// func RedirectResponse(location string) (events.APIGatewayProxyResponse, error) { ... }
-
 // OptionsResponse handles CORS preflight requests.
 // Returns APIGatewayProxyResponse directly.
 func OptionsResponse() (events.APIGatewayProxyResponse, error) {
@@ -73,7 +68,7 @@ func OptionsResponse() (events.APIGatewayProxyResponse, error) {
 	logrus.Debug("Handling CORS preflight OPTIONS request")
 	return events.APIGatewayProxyResponse{
 		StatusCode: http.StatusOK,
-		Headers:    jsonHeaders, // Allow specified methods/headers/credentials
+		Headers:    jsonHeaders,
 		Body:       "",
 	}, nil
 }

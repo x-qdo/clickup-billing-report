@@ -10,8 +10,6 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-// responseWriterShim is REMOVED. Use HttpResponseWriter instead.
-
 // NewRequestFromEvent creates a minimal *http.Request from an APIGatewayProxyRequest.
 // This is useful for functions expecting *http.Request (like cookie handling).
 func NewRequestFromEvent(ctx context.Context, event events.APIGatewayProxyRequest) (*http.Request, error) {
@@ -49,11 +47,11 @@ func NewRequestFromEvent(ctx context.Context, event events.APIGatewayProxyReques
 		query := url.Values{}
 		for k, v := range event.MultiValueQueryStringParameters {
 			for _, iv := range v {
-				query.Add(k, iv) // Use Add to handle multiple values for the same key
+				query.Add(k, iv)
 			}
 		}
 		rawQuery = query.Encode()
-	} else if len(event.QueryStringParameters) > 0 { // Fallback to single value params
+	} else if len(event.QueryStringParameters) > 0 {
 		query := url.Values{}
 		for k, v := range event.QueryStringParameters {
 			query.Set(k, v)
@@ -106,5 +104,3 @@ func NewRequestFromEvent(ctx context.Context, event events.APIGatewayProxyReques
 
 	return req, nil
 }
-
-// MergeHeaders is REMOVED. Headers are handled by HttpResponseWriter.

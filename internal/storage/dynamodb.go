@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/sirupsen/logrus"
-	"github.com/your-org/clickup-reporter/internal/config" // Import config for types and constants
+	"github.com/x-qdo/clickup-billing-report/internal/config"
 )
 
 // DynamoDBStore implements the DataStore interface using AWS DynamoDB.
@@ -45,12 +45,8 @@ func NewDynamoDBStore(awsCfg aws.Config, logger *logrus.Logger) (config.DataStor
 		"sessionsTable":   store.sessionsTable,
 	}).Info("DynamoDB table names configured")
 
-	// Ensure the struct implements the interface (compile-time check)
-	var _ config.DataStore = store
 	return store, nil
 }
-
-// --- Client Operations ---
 
 func (s *DynamoDBStore) GetClient(ctx context.Context, name string) (*config.Client, error) {
 	s.log.WithField("client_name", name).Debug("Getting client")
@@ -72,7 +68,7 @@ func (s *DynamoDBStore) GetClient(ctx context.Context, name string) (*config.Cli
 
 	if result.Item == nil {
 		s.log.WithField("client_name", name).Warn("Client not found")
-		return nil, config.ErrNotFound // Use error from config package
+		return nil, config.ErrNotFound
 	}
 
 	var client config.Client
@@ -92,8 +88,6 @@ func (s *DynamoDBStore) ListClients(ctx context.Context) ([]config.Client, error
 		TableName: aws.String(s.clientsTable),
 	}
 
-	// Note: Scan is generally inefficient for large tables. Consider Query if possible.
-	// Use pagination for large tables
 	var clients []config.Client
 	paginator := dynamodb.NewScanPaginator(s.client, input)
 	for paginator.HasMorePages() {

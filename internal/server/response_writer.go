@@ -22,7 +22,7 @@ type HttpResponseWriter struct {
 func NewResponseWriter() *HttpResponseWriter {
 	return &HttpResponseWriter{
 		header:     make(http.Header),
-		statusCode: 0, // Explicitly 0, will default to 200 if Write is called first
+		statusCode: 0,
 	}
 }
 
@@ -36,9 +36,8 @@ func (rw *HttpResponseWriter) Header() http.Header {
 // before writing the data.
 func (rw *HttpResponseWriter) Write(b []byte) (int, error) {
 	if !rw.wroteHeader {
-		rw.WriteHeader(http.StatusOK) // Default to 200 OK if Write is called before WriteHeader
+		rw.WriteHeader(http.StatusOK)
 	}
-	// Write to the internal buffer
 	return rw.buffer.Write(b)
 }
 
@@ -51,22 +50,18 @@ func (rw *HttpResponseWriter) WriteHeader(statusCode int) {
 	}
 	rw.statusCode = statusCode
 	rw.wroteHeader = true
-	// Headers set via rw.Header() are stored in rw.header and applied in ToAPIGatewayProxyResponse
 }
 
 // ToAPIGatewayProxyResponse converts the captured response data into the format
 // expected by AWS API Gateway Lambda proxy integration.
 func (rw *HttpResponseWriter) ToAPIGatewayProxyResponse() events.APIGatewayProxyResponse {
-	// Convert http.Header (map[string][]string) to APIGateway's MultiValueHeaders
 	multiValueHeaders := make(map[string][]string)
 	for key, values := range rw.header {
 		multiValueHeaders[key] = values
 	}
 
-	// Determine final status code
 	finalStatusCode := rw.statusCode
 	if !rw.wroteHeader {
-		// If WriteHeader was never called, default to 200 OK
 		finalStatusCode = http.StatusOK
 		logrus.WithField("finalStatusCode", finalStatusCode).Debug("WriteHeader never called, defaulting status code")
 	}
@@ -74,10 +69,10 @@ func (rw *HttpResponseWriter) ToAPIGatewayProxyResponse() events.APIGatewayProxy
 	// Construct the response object
 	response := events.APIGatewayProxyResponse{
 		StatusCode:        finalStatusCode,
-		Headers:           convertMultiToSingleValueHeaders(multiValueHeaders), // For single-value compatibility
+		Headers:           convertMultiToSingleValueHeaders(multiValueHeaders),
 		MultiValueHeaders: multiValueHeaders,
 		Body:              rw.buffer.String(),
-		IsBase64Encoded:   false, // Assuming text/json body, adjust if handling binary
+		IsBase64Encoded:   false,
 	}
 
 	return response
@@ -89,7 +84,7 @@ func convertMultiToSingleValueHeaders(multi map[string][]string) map[string]stri
 	single := make(map[string]string)
 	for key, values := range multi {
 		if len(values) > 0 {
-			single[key] = values[0] // Take the first value
+			single[key] = values[0]
 		}
 	}
 	return single
