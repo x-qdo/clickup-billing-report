@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	apiBaseURL = "https://api.clickup.com/api/v2"
+	apiBaseURL = "https://api.clickup.com"
 )
 
 // Client manages communication with the ClickUp API.
@@ -84,9 +84,12 @@ func GetAuthenticatedUserClient(ctx context.Context, oauthConf *oauth2.Config, t
 	return NewClient(httpClient, logger, "")
 }
 
-// --- Request Helper ---
-func (c *Client) newRequest(ctx context.Context, method, path string, body interface{}) (*http.Request, error) {
-	rel := &url.URL{Path: path}
+// newRequest creates an API request. A relative URL path can be provided in path,
+// specific query string parameters can be provided in rawQuery, and a JSON body
+// can be provided in body. If body is nil, the request will be GET, otherwise POST/PUT etc.
+// depending on the method.
+func (c *Client) newRequest(ctx context.Context, method, path, rawQuery string, body interface{}) (*http.Request, error) {
+	rel := &url.URL{Path: path, RawQuery: rawQuery}
 	u := c.baseURL.ResolveReference(rel)
 
 	var buf io.ReadWriter
@@ -200,8 +203,8 @@ func (c *Client) getCustomFieldsMapForList(ctx context.Context, listID string) (
 
 // loadCustomFieldsFromAPI fetches custom field definitions directly from the ClickUp API.
 func (c *Client) loadCustomFieldsFromAPI(ctx context.Context, listID string) (map[string]*CustomField, error) {
-	path := fmt.Sprintf("/list/%s/field", listID)
-	req, err := c.newRequest(ctx, "GET", path, nil)
+	path := fmt.Sprintf("/api/v2/list/%s/field", listID)
+	req, err := c.newRequest(ctx, "GET", path, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create custom fields request: %w", err)
 	}
@@ -248,7 +251,7 @@ func (c *Client) GetCustomFieldID(ctx context.Context, listID, fieldName string)
 // GetUser fetches details for the authenticated user.
 func (c *Client) GetUser(ctx context.Context) (*User, error) {
 	c.log.Info("Fetching authenticated user details")
-	req, err := c.newRequest(ctx, "GET", "/user", nil)
+	req, err := c.newRequest(ctx, "GET", "/api/v2/user", "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +280,7 @@ func (c *Client) GetTasks(ctx context.Context, listID string, opts *GetTasksOpti
 	lastPage := false
 
 	for !lastPage {
-		path := fmt.Sprintf("/list/%s/task", listID)
+		path := fmt.Sprintf("/api/v2/list/%s/task", listID)
 		params := url.Values{}
 		params.Set("page", strconv.Itoa(page))
 		if opts != nil {
@@ -292,10 +295,10 @@ func (c *Client) GetTasks(ctx context.Context, listID string, opts *GetTasksOpti
 			// Add other options here
 		}
 
-		fullPath := path + "?" + params.Encode()
+		query := params.Encode()
 		c.log.WithFields(logrus.Fields{"list_id": listID, "page": page, "params": params}).Info("Fetching tasks page")
 
-		req, err := c.newRequest(ctx, "GET", fullPath, nil)
+		req, err := c.newRequest(ctx, "GET", path, query, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tasks request for page %d: %w", page, err)
 		}
@@ -336,7 +339,7 @@ type GetTimeEntriesOptions struct {
 // GetTimeEntries fetches time entries for a team, handling pagination (if API supports it).
 // Note: ClickUp's time entry endpoint pagination is unclear/maybe non-existent. Fetch all in one go for now.
 func (c *Client) GetTimeEntries(ctx context.Context, teamID string, opts *GetTimeEntriesOptions) ([]TimeEntry, error) {
-	path := fmt.Sprintf("/team/%s/time_entries", teamID)
+	path := fmt.Sprintf("/api/v2/team/%s/time_entries", teamID)
 	params := url.Values{}
 
 	if opts != nil {
@@ -365,10 +368,10 @@ func (c *Client) GetTimeEntries(ctx context.Context, teamID string, opts *GetTim
 		}
 	}
 
-	fullPath := path + "?" + params.Encode()
+	query := params.Encode()
 	c.log.WithFields(logrus.Fields{"team_id": teamID, "params": params}).Info("Fetching time entries")
 
-	req, err := c.newRequest(ctx, "GET", fullPath, nil)
+	req, err := c.newRequest(ctx, "GET", path, query, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create time entries request: %w", err)
 	}
@@ -386,13 +389,13 @@ func (c *Client) GetTimeEntries(ctx context.Context, teamID string, opts *GetTim
 // UpdateTaskCustomField updates a custom field value for a task.
 // The `value` should be the appropriate type for the custom field (e.g., float64 for number, string for text).
 func (c *Client) UpdateTaskCustomField(ctx context.Context, taskID, fieldID string, value interface{}) error {
-	path := fmt.Sprintf("/task/%s/field/%s", taskID, fieldID)
+	path := fmt.Sprintf("/api/v2/task/%s/field/%s", taskID, fieldID)
 	c.log.WithFields(logrus.Fields{"task_id": taskID, "field_id": fieldID, "value": value}).Info("Updating task custom field")
 
 	// ClickUp expects numbers as numbers, not strings, in the JSON payload
 	requestBody := UpdateTaskFieldRequest{Value: value}
 
-	req, err := c.newRequest(ctx, "POST", path, requestBody)
+	req, err := c.newRequest(ctx, "POST", path, "", requestBody)
 	if err != nil {
 		return fmt.Errorf("failed to create update custom field request: %w", err)
 	}
