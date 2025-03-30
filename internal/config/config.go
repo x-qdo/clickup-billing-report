@@ -10,7 +10,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
-	// No longer importing storage here
 )
 
 // --- DataStore Interface (Moved from storage package) ---
@@ -63,22 +62,21 @@ const (
 	DefaultDevelopersTableName = "ClickUpReporter-Developers"
 	DefaultSettingsTableName   = "ClickUpReporter-Settings"
 	DefaultSessionsTableName   = "ClickUpReporter-Sessions"
-	DefaultDebugPort           = "8080" // Default port for debug mode HTTP server
+	DefaultDebugPort           = "5000"
 )
 
 // --- Configuration Structs ---
 
 // Client represents the configuration for a specific client.
 type Client struct {
-	Name               string            `dynamodbav:"Name" json:"name"` // Primary Key for Clients table
-	ClickUpListID      string            `dynamodbav:"ClickUpListID" json:"clickup_list_id"`
-	ClickUpTeamID      string            `dynamodbav:"ClickUpTeamID" json:"clickup_team_id"`
-	ContractIncluded   float64           `dynamodbav:"ContractIncluded" json:"contract_included"`
-	TogglSyncEnabled   bool              `dynamodbav:"TogglSyncEnabled" json:"toggl_sync_enabled"`
-	TogglWorkspaceID   string            `dynamodbav:"TogglWorkspaceID,omitempty" json:"toggl_workspace_id,omitempty"`
-	CustomFieldMapping map[string]string `dynamodbav:"CustomFieldMapping,omitempty" json:"custom_field_mapping,omitempty"` // Optional: Maps logical names (e.g., "BillableHours") to ClickUp Field Names or IDs
-	CreatedAt          time.Time         `dynamodbav:"CreatedAt" json:"created_at"`
-	UpdatedAt          time.Time         `dynamodbav:"UpdatedAt" json:"updated_at"`
+	Name             string    `dynamodbav:"Name" json:"name"` // Primary Key for Clients table
+	ClickUpListID    string    `dynamodbav:"ClickUpListID" json:"clickup_list_id"`
+	ClickUpTeamID    string    `dynamodbav:"ClickUpTeamID" json:"clickup_team_id"`
+	ContractIncluded float64   `dynamodbav:"ContractIncluded" json:"contract_included"`
+	TogglSyncEnabled bool      `dynamodbav:"TogglSyncEnabled" json:"toggl_sync_enabled"`
+	TogglWorkspaceID string    `dynamodbav:"TogglWorkspaceID,omitempty" json:"toggl_workspace_id,omitempty"`
+	CreatedAt        time.Time `dynamodbav:"CreatedAt" json:"created_at"`
+	UpdatedAt        time.Time `dynamodbav:"UpdatedAt" json:"updated_at"`
 }
 
 // Developer represents a developer and their billing coefficient.
