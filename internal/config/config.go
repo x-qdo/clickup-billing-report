@@ -237,7 +237,9 @@ var (
 func LoadConfig(ctx context.Context, store DataStore) (*AppConfig, error) {
 	once.Do(func() {
 		logger := logrus.New()
-		logger.SetFormatter(&logrus.JSONFormatter{})
+		if os.Getenv("LOG_LEVEL") == "json" {
+			logger.SetFormatter(&logrus.JSONFormatter{})
+		}
 		logLevelStr := os.Getenv("LOG_LEVEL")
 		logLevel, err := logrus.ParseLevel(logLevelStr)
 		if err != nil {
