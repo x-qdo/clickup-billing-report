@@ -12,9 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
-	"github.com/your-org/clickup-reporter/internal/clickup"
-	"github.com/your-org/clickup-reporter/internal/config"
-	// No longer need to import storage directly, use config.DataStore
+	"github.com/x-qdo/clickup-billing-report/internal/clickup"
+	"github.com/x-qdo/clickup-billing-report/internal/config"
 	"golang.org/x/oauth2"
 )
 
@@ -200,12 +199,19 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) e
 	}
 	a.log.Debug("Access token encrypted")
 
+	sessionExpiry := token.Expiry.UTC()
+	if sessionExpiry.IsZero() {
+		sessionExpiry = time.Now().AddDate(1, 0, 0).UTC() // 1 year from now
+		a.log.Info("Token has no expiry (zero time), setting session expiry to 1 year")
+	}
+
 	session := config.SessionState{
 		SessionID:    sessionID,
-		ClickUpToken: encryptedToken, // Store encrypted token
+		ClickUpToken: encryptedToken,
 		UserID:       strconv.Itoa(userInfo.ID),
 		UserName:     userInfo.Username,
-		ExpiresAt:    token.Expiry.UTC(), // Store expiry in UTC
+		ExpiresAt:    sessionExpiry,
+		TTL:          sessionExpiry.UTC().Unix(),
 	}
 
 	err = a.store.SaveSession(ctx, session)
@@ -216,10 +222,11 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) e
 	a.log.WithField("user_id", session.UserID).Info("Session saved")
 
 	// Set session cookie
+	// Set session cookie using the calculated expiry
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    sessionID,
-		Expires:  token.Expiry.UTC(), // Align cookie expiry with token expiry (UTC)
+		Expires:  sessionExpiry, // Use calculated expiry
 		HttpOnly: true,
 		Secure:   isSecure,
 		Path:     "/", // Make cookie available for all paths
