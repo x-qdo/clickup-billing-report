@@ -11,15 +11,14 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/your-org/clickup-reporter/internal/clickup"
-	"github.com/your-org/clickup-reporter/internal/config"
+	"github.com/x-qdo/clickup-billing-report/internal/clickup"
+	"github.com/x-qdo/clickup-billing-report/internal/config"
 )
 
 const (
-	// Standard custom field names we expect (case-sensitive)
 	BillableHoursField = "BillableHours"
 	InvoicedHoursField = "InvoicedHours"
-	ReportedByField    = "Reported By" // Added field name
+	ReportedByField    = "Reported By"
 )
 
 // Service handles report generation logic.
@@ -36,8 +35,6 @@ func NewService(appConf *config.AppConfig) *Service {
 	}
 }
 
-// --- Time Tracking Report ---
-
 // TimeTrackingInput defines parameters for the time tracking report.
 type TimeTrackingInput struct {
 	SelectedMonth   time.Time // Represents the month to report on (e.g., 2023-10-01)
@@ -49,25 +46,27 @@ type TimeTrackingInput struct {
 type PersonalTime struct {
 	Username         string  `json:"username"`
 	Client           string  `json:"client"`
-	AdjustedDuration float64 `json:"adjusted_duration_hours"`
-	TotalDuration    float64 `json:"total_duration_hours"`
+	AdjustedDuration float64 `json:"adjusted_hours"` // Total adjusted hours (including internal)
+	InternalDuration float64 `json:"internal_hours"` // Portion of AdjustedDuration spent on 'internal' tasks
+	TotalDuration    float64 `json:"total_hours"`    // Raw hours before coefficient adjustment
 }
 
 // FinalReportTask represents aggregated time per task for the time tracking report.
 type FinalReportTask struct {
-	TaskID             string  `json:"task_id"`
-	CustomID           string  `json:"custom_id"`
-	TaskName           string  `json:"task_name"`
-	Client             string  `json:"client"`
-	AdjustedDuration   float64 `json:"adjusted_duration_hours"`   // Rounded to 0.5h for the reporting period
-	InvoicedHours      float64 `json:"invoiced_hours"`            // Value at the time of report generation
-	CalculatedBillable float64 `json:"calculated_billable_hours"` // Invoiced + Adjusted for the period
+	TaskID             string   `json:"task_id"`
+	CustomID           string   `json:"custom_id"`
+	Tags               []string `json:"tags"`
+	TaskName           string   `json:"task_name"`
+	Client             string   `json:"client"`
+	AdjustedDuration   float64  `json:"adjusted_hours"`            // Rounded to 0.5h for the reporting period
+	InvoicedHours      float64  `json:"invoiced_hours"`            // Value at the time of report generation
+	CalculatedBillable float64  `json:"calculated_billable_hours"` // Invoiced + Adjusted for the period
 }
 
 // ClientTotal represents total adjusted hours per client for the time tracking report.
 type ClientTotal struct {
 	Client           string  `json:"client"`
-	AdjustedDuration float64 `json:"adjusted_duration_hours"`
+	AdjustedDuration float64 `json:"adjusted_hours"`
 }
 
 // TimeTrackingOutput holds the results of the time tracking report.
@@ -85,8 +84,8 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 	}).Info("Generating time tracking report")
 
 	// 1. Prepare: Get clients, developers, date range
-	clients := s.appConfig.Clients       // Use cached config
-	developers := s.appConfig.Developers // Use cached config
+	clients := s.appConfig.Clients
+	developers := s.appConfig.Developers
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no clients configured")
 	}
@@ -96,7 +95,7 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 	s.log.Debugf("Report date range: %s to %s", firstDayOfMonth.Format(time.RFC3339), lastDayOfMonth.Format(time.RFC3339))
 
 	// Create ClickUp client with user's token
-	cuClient, err := clickup.NewClient(nil, s.appConfig.Logger, input.ClickUpToken) // Use default http client with token
+	cuClient, err := clickup.NewClient(nil, s.appConfig.Logger, input.ClickUpToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clickup client: %w", err)
 	}
@@ -131,9 +130,13 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 		if !okB {
 			id, err := cuClient.GetCustomFieldID(ctx, clientCfg.ClickUpListID, BillableHoursField)
 			if err != nil {
-				s.log.WithError(err).WithFields(logrus.Fields{"client": clientName, "list_id": clientCfg.ClickUpListID}).Warnf("Could not find '%s' custom field ID", BillableHoursField)
+				s.log.WithError(err).
+					WithFields(logrus.Fields{"client": clientName, "list_id": clientCfg.ClickUpListID}).
+					Warnf("Could not find '%s' custom field ID", BillableHoursField)
 			} else {
-				s.log.WithField("list_id", clientCfg.ClickUpListID).Debugf("Found '%s' field ID: %s", BillableHoursField, id)
+				s.log.
+					WithField("list_id", clientCfg.ClickUpListID).
+					Debugf("Found '%s' field ID: %s", BillableHoursField, id)
 				billableFieldID = id
 				listBillableFieldIDCache[clientCfg.ClickUpListID] = id
 			}
@@ -142,17 +145,25 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 		if !okI {
 			id, err := cuClient.GetCustomFieldID(ctx, clientCfg.ClickUpListID, InvoicedHoursField)
 			if err != nil {
-				s.log.WithError(err).WithFields(logrus.Fields{"client": clientName, "list_id": clientCfg.ClickUpListID}).Warnf("Could not find '%s' custom field ID", InvoicedHoursField)
+				s.log.WithError(err).
+					WithFields(logrus.Fields{"client": clientName, "list_id": clientCfg.ClickUpListID}).
+					Warnf("Could not find '%s' custom field ID", InvoicedHoursField)
 			} else {
 				s.log.WithField("list_id", clientCfg.ClickUpListID).Debugf("Found '%s' field ID: %s", InvoicedHoursField, id)
 				invoicedFieldID = id
-				listInvoicedFieldIDCache[clientCfg.ClickUpListID] = id // <<< FIX: Store in cache
+				listInvoicedFieldIDCache[clientCfg.ClickUpListID] = id
 			}
 		}
 
-		// Process tasks: store for lookup, extract invoiced hours, map billable field ID
+		// Process tasks: store for lookup, extract invoiced hours, map billable field ID, collect assignees
+		clientAssigneeIDs := make(map[string]struct{}) // Use map for unique IDs
 		for _, task := range tasks {
-			processedTasks[task.ID] = task // Store full task data
+			processedTasks[task.ID] = task
+
+			// Collect assignees from this task
+			for _, assignee := range task.Assignees {
+				clientAssigneeIDs[strconv.Itoa(assignee.ID)] = struct{}{}
+			}
 
 			// Store the billable field ID for this task if found for the list
 			if billableFieldID != "" {
@@ -174,17 +185,24 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 			}
 		}
 
-		// Fetch Time Entries
+		// Convert collected assignee IDs map keys to slice
+		assigneeIDsSlice := make([]string, 0, len(clientAssigneeIDs))
+		for id := range clientAssigneeIDs {
+			assigneeIDsSlice = append(assigneeIDsSlice, id)
+		}
+		s.log.WithFields(logrus.Fields{"client": clientName, "assignee_ids": assigneeIDsSlice}).Debug("Collected assignees for time entry fetching")
+
+		// Fetch Time Entries for collected assignees
 		timeOpts := &clickup.GetTimeEntriesOptions{
 			StartDate:   firstDayOfMonth,
 			EndDate:     lastDayOfMonth,
 			ListID:      clientCfg.ClickUpListID,
-			AssigneeIDs: nil, // Fetch for all assignees in the list for simplicity
+			AssigneeIDs: assigneeIDsSlice,
 		}
 		timeEntries, err := cuClient.GetTimeEntries(ctx, clientCfg.ClickUpTeamID, timeOpts)
 		if err != nil {
 			s.log.WithError(err).WithField("client", clientName).Error("Failed to fetch time entries")
-			continue // Continue with other clients
+			continue
 		}
 		allTimeEntries[clientName] = timeEntries
 		s.log.WithFields(logrus.Fields{"client": clientName, "entry_count": len(timeEntries)}).Debug("Time entries fetched")
@@ -195,7 +213,6 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 	taskTimeMap := make(map[string]float64)           // key: taskID -> total AdjustedDuration (in hours)
 
 	for clientName, entries := range allTimeEntries {
-		clientConf := clients[clientName] // Get client config for team ID etc.
 		for _, entry := range entries {
 			// Calculate durations in hours
 			durationMs, err := strconv.ParseInt(entry.Duration, 10, 64)
@@ -206,58 +223,81 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 			totalDurationHours := float64(durationMs) / (1000 * 60 * 60)
 
 			// Get developer coefficient
-			coeff := 1.0 // Default
-			if dev, ok := developers[entry.User.Username]; ok {
+			coeff := 1.0
+			dev, devOk := developers[entry.User.Username]
+			if !devOk {
+				s.log.WithField("username", entry.User.Username).Warn("Developer not found in config, creating with coefficient 1.0")
+				newDeveloper := config.Developer{
+					Name:        entry.User.Username,
+					Coefficient: 1.0,
+					ClickUpID:   strconv.Itoa(entry.User.ID),
+				}
+				err := s.appConfig.Store.SaveDeveloper(ctx, newDeveloper)
+				if err != nil {
+					// Log error but continue report generation with coeff 1.0
+					s.log.WithError(err).WithField("developer_name", newDeveloper.Name).Error("Failed to save newly created developer")
+				} else {
+					s.log.WithField("developer_name", newDeveloper.Name).Info("Successfully saved new developer")
+					developers[newDeveloper.Name] = newDeveloper
+					dev = newDeveloper
+				}
+			} else {
 				if dev.Coefficient > 0 {
 					coeff = dev.Coefficient
 				} else {
 					s.log.WithFields(logrus.Fields{"developer": dev.Name, "coefficient": dev.Coefficient}).Warn("Developer coefficient is zero or negative, using 1.0")
+					coeff = 1.0
 				}
-			} else {
-				// Check if username might contain email or other format
-				s.log.WithField("username", entry.User.Username).Warn("Developer coefficient not found, using 1.0")
 			}
+
 			adjustedDurationHours := totalDurationHours / coeff
 
-			// Aggregate personal time
-			personalKey := fmt.Sprintf("%s_%s", entry.User.Username, clientName)
-			if pt, ok := personalTimeMap[personalKey]; ok {
-				pt.AdjustedDuration += adjustedDurationHours
-				pt.TotalDuration += totalDurationHours
-			} else {
-				personalTimeMap[personalKey] = &PersonalTime{
-					Username:         entry.User.Username,
-					Client:           clientName,
-					AdjustedDuration: adjustedDurationHours,
-					TotalDuration:    totalDurationHours,
-				}
-			}
+			// Determine task ID (handle parent tasks)
+			taskIDForAggregation := entry.Task.ID
+			isInternalTask := false
+			var taskTags []clickup.Tag
 
-			// Aggregate task time (use parent task ID if available, otherwise task ID)
-			taskID := entry.Task.ID
-			if task, ok := processedTasks[taskID]; ok {
-				// Ensure task belongs to the correct client list before processing
-				if task.List.ID != clientConf.ClickUpListID {
-					s.log.WithFields(logrus.Fields{
-						"entry_id":       entry.ID,
-						"task_id":        task.CustomID,
-						"task_list_id":   task.List.ID,
-						"client_list_id": clientConf.ClickUpListID,
-					}).Warn("Time entry task belongs to a different list than the client config, skipping aggregation for this entry.")
-					continue
-				}
+			if task, ok := processedTasks[entry.Task.ID]; ok {
+				taskTags = task.Tags // Get tags from the original task
+
+				// Check if it's a subtask and parent exists
 				if task.Parent != "" {
-					// Check if parent exists in processedTasks, otherwise log warning and use original task ID
-					if _, parentExists := processedTasks[task.Parent]; parentExists {
-						taskID = task.Parent // Aggregate time under the parent task
+					if parentTask, parentExists := processedTasks[task.Parent]; parentExists {
+						taskIDForAggregation = task.Parent // Aggregate time under the parent task
+						taskTags = parentTask.Tags         // Use parent task's tags for internal check
 					} else {
-						s.log.WithFields(logrus.Fields{"task_id": task.CustomID, "parent_id": task.Parent}).Warn("Parent task details not found for time entry, aggregating under original task ID")
+						s.log.WithFields(logrus.Fields{"task_id": task.CustomID, "parent_id": task.Parent}).Warn("Parent task details not found for time entry, aggregating under original task ID and using its tags")
+					}
+				}
+
+				for _, tag := range taskTags {
+					if strings.ToLower(tag.Name) == "internal" {
+						isInternalTask = true
+						break
 					}
 				}
 			} else {
-				s.log.WithField("task_id", taskID).Warn("Task details not found for time entry, aggregating under original task ID")
+				s.log.WithField("task_id", entry.Task.ID).Warn("Task details not found for time entry, aggregating under original task ID, cannot check for internal tag")
 			}
-			taskTimeMap[taskID] += adjustedDurationHours
+
+			// Aggregate personal time
+			personalKey := fmt.Sprintf("%s_%s", entry.User.Username, clientName)
+			pt, ptOk := personalTimeMap[personalKey]
+			if !ptOk {
+				pt = &PersonalTime{
+					Username: entry.User.Username,
+					Client:   clientName,
+				}
+				personalTimeMap[personalKey] = pt
+			}
+			pt.AdjustedDuration += adjustedDurationHours
+			pt.TotalDuration += totalDurationHours
+			if isInternalTask {
+				pt.InternalDuration += adjustedDurationHours // Add to internal counter if tagged
+			}
+
+			// Aggregate task time using the determined task ID (original or parent)
+			taskTimeMap[taskIDForAggregation] += adjustedDurationHours
 		}
 	}
 
@@ -290,17 +330,22 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 				continue
 			}
 
+			// Extract tags
+			taskTags := make([]string, len(task.Tags))
+			for i, t := range task.Tags {
+				taskTags[i] = t.Name
+			}
+
 			finalReportTasks = append(finalReportTasks, FinalReportTask{
 				TaskID:             task.ID,
 				CustomID:           task.CustomID,
 				TaskName:           task.Name,
 				Client:             clientName,
+				Tags:               taskTags,
 				AdjustedDuration:   roundedAdjustedDuration,
 				InvoicedHours:      invoicedHours,
 				CalculatedBillable: calculatedBillable,
 			})
-
-			clientTotalsMap[clientName] += roundedAdjustedDuration
 
 			// 5. Update ClickUp if refreshBillable is true
 			if input.RefreshBillable {
@@ -333,7 +378,22 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 		}
 	}
 
-	// 6. Format Output
+	// 6. Calculate Client Totals (excluding internal tasks)
+	clientTotalsMap = make(map[string]float64)
+	for _, task := range finalReportTasks {
+		isInternal := false
+		for _, tagName := range task.Tags {
+			if strings.ToLower(tagName) == "internal" {
+				isInternal = true
+				break
+			}
+		}
+		if !isInternal {
+			clientTotalsMap[task.Client] += task.AdjustedDuration
+		}
+	}
+
+	// 7. Format Output
 	output := &TimeTrackingOutput{
 		PersonalReport: make([]PersonalTime, 0, len(personalTimeMap)),
 		FinalReport:    finalReportTasks, // Already populated
@@ -343,10 +403,11 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 	for _, pt := range personalTimeMap {
 		// Round durations in personal report for consistency
 		pt.AdjustedDuration = math.Round(pt.AdjustedDuration*100) / 100
+		pt.InternalDuration = math.Round(pt.InternalDuration*100) / 100 // Round internal hours too
 		pt.TotalDuration = math.Round(pt.TotalDuration*100) / 100
 		output.PersonalReport = append(output.PersonalReport, *pt)
 	}
-	// Sort personal report by client then duration desc
+	// Sort personal report by client then adjusted duration desc
 	sort.SliceStable(output.PersonalReport, func(i, j int) bool {
 		if output.PersonalReport[i].Client != output.PersonalReport[j].Client {
 			return output.PersonalReport[i].Client < output.PersonalReport[j].Client
