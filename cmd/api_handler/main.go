@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -289,7 +292,7 @@ func serveReportRequest(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		log.WithField("actual_path", r.URL.Path).Warn("Report handler received request for unknown report path or method")
-		http.NotFound(w, r) // Or respondWithJSON(w, http.StatusNotFound, ...)
+		http.NotFound(w, r)
 	}
 }
 
@@ -311,34 +314,48 @@ func parseHTTPFormParams(r *http.Request, log *logrus.Entry) (url.Values, error)
 	return r.Form, nil
 }
 
-// respondWithJSON is a helper for sending JSON responses in the HTTP server context.
-// It also handles basic CORS headers, which might be needed for debug mode or specific setups.
+// setCorsHeaders sets common CORS headers. Adjust origin for production.
+func setCorsHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie, Content-Disposition")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE") // Add methods as needed
+}
+
+// respondWithJSON is a helper for sending JSON responses.
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	response, err := json.Marshal(payload)
 	if err != nil {
-		// Log the error internally
 		logrus.WithError(err).Error("Failed to marshal JSON response payload")
-		// Send a generic error response back to the client
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*") // Adjust for production
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie")
+		setCorsHeaders(w)
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error": "Internal Server Error", "message": "Failed to generate response"}`)) // Ignore write error here
+		_, _ = w.Write([]byte(`{"error": "Internal Server Error", "message": "Failed to generate response"}`))
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	// Add CORS headers - adjust origin and headers for production environments
-	w.Header().Set("Access-Control-Allow-Origin", "*") // Example: Use appConf.Global.AllowedOrigin
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie") // Add any custom headers needed
-
+	setCorsHeaders(w)
 	w.WriteHeader(code)
 	_, err = w.Write(response)
 	if err != nil {
-		// Log write error, but headers and status are already sent.
 		logrus.WithError(err).Error("Failed to write JSON response body")
+	}
+}
+
+// respondWithFile sends a binary file response (e.g., Excel).
+func respondWithFile(w http.ResponseWriter, code int, data []byte, contentType, filename string) {
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	if filename != "" {
+		// Suggest filename for download
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	}
+	setCorsHeaders(w) // Also set CORS for file downloads if needed by frontend
+	w.WriteHeader(code)
+	_, err := w.Write(data)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to write file response body")
 	}
 }
 
@@ -355,6 +372,7 @@ func handleGenerateTimeTrackReport(w http.ResponseWriter, r *http.Request, token
 
 	reportDateStr := params.Get("report_date") // Expected format: "YYYY-MM"
 	refreshBillableStr := params.Get("refresh_billable")
+	outputFormat := params.Get("format") // "excel" or empty/other for JSON
 
 	if reportDateStr == "" {
 		log.Warn("Missing 'report_date' parameter")
@@ -384,13 +402,37 @@ func handleGenerateTimeTrackReport(w http.ResponseWriter, r *http.Request, token
 	reportOutput, err := reportService.GenerateTimeTrackingReport(ctx, input)
 	if err != nil {
 		log.WithError(err).Error("Failed to generate time tracking report")
-		// Check for specific error types if needed (e.g., ClickUp API errors)
 		respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "ReportGenerationFailed", Message: fmt.Sprintf("Error generating time tracking report: %v", err)})
 		return
 	}
 
-	log.Info("Successfully generated time tracking report")
-	respondWithJSON(w, http.StatusOK, reportOutput)
+	// --- Respond based on format ---
+	if outputFormat == "excel" {
+		log.Info("Generating Excel format for time tracking report")
+		excelFile, err := report.GenerateTimeTrackingExcel(reportOutput, selectedMonth)
+		if err != nil {
+			log.WithError(err).Error("Failed to generate time tracking Excel file")
+			respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "ExcelGenerationFailed", Message: fmt.Sprintf("Error generating Excel report: %v", err)})
+			return
+		}
+
+		// Save Excel to buffer
+		var buf bytes.Buffer
+		if err := excelFile.Write(&buf); err != nil {
+			log.WithError(err).Error("Failed to write Excel file to buffer")
+			respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "ExcelWriteFailed", Message: "Failed to write Excel file"})
+			return
+		}
+
+		filename := fmt.Sprintf("time_tracking_report_%s.xlsx", selectedMonth.Format("2006-01"))
+		contentType := "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+		respondWithFile(w, http.StatusOK, buf.Bytes(), contentType, filename)
+		log.Info("Successfully sent time tracking report as Excel file")
+
+	} else {
+		log.Info("Successfully generated time tracking report (JSON)")
+		respondWithJSON(w, http.StatusOK, reportOutput)
+	}
 }
 
 // handleGenerateBillableReport handles the POST request for the billable report.
@@ -404,12 +446,13 @@ func handleGenerateBillableReport(w http.ResponseWriter, r *http.Request, token 
 		return
 	}
 
-	listID := params.Get("list_id")
+	clientName := params.Get("client_name")
 	refreshInvoicedStr := params.Get("refresh_invoiced")
+	outputFormat := params.Get("format") // "excel" or empty/other for JSON
 
-	if listID == "" {
-		log.Warn("Missing 'list_id' parameter")
-		respondWithJSON(w, http.StatusBadRequest, server.ErrorResponse{Error: "MissingParam", Message: "Missing 'list_id' parameter"})
+	if clientName == "" {
+		log.Warn("Missing 'client_name' parameter")
+		respondWithJSON(w, http.StatusBadRequest, server.ErrorResponse{Error: "MissingParam", Message: "Missing 'client_name' parameter"})
 		return
 	}
 
@@ -420,7 +463,7 @@ func handleGenerateBillableReport(w http.ResponseWriter, r *http.Request, token 
 	}
 
 	input := report.BillableReportInput{
-		ListID:          listID,
+		ClientName:      clientName, // Use client name
 		RefreshInvoiced: refreshInvoiced,
 		ClickUpToken:    token,
 	}
@@ -428,13 +471,58 @@ func handleGenerateBillableReport(w http.ResponseWriter, r *http.Request, token 
 	reportOutput, err := reportService.GenerateBillableReport(ctx, input)
 	if err != nil {
 		log.WithError(err).Error("Failed to generate billable report")
-		// Check for specific error types if needed
-		respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "ReportGenerationFailed", Message: fmt.Sprintf("Error generating billable report: %v", err)})
+		// Check for specific error types if needed (e.g., client not found)
+		var storageErr *config.StorageError
+		if errors.As(err, &storageErr) { // Example: Check if it's a known config error type
+			respondWithJSON(w, http.StatusBadRequest, server.ErrorResponse{Error: "ConfigError", Message: err.Error()})
+		} else {
+			respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "ReportGenerationFailed", Message: fmt.Sprintf("Error generating billable report: %v", err)})
+		}
 		return
 	}
 
-	log.Info("Successfully generated billable report")
-	respondWithJSON(w, http.StatusOK, reportOutput)
+	// --- Respond based on format ---
+	if outputFormat == "excel" {
+		log.Info("Generating Excel format for billable report")
+		excelFile, err := report.GenerateBillableExcel(reportOutput, clientName)
+		if err != nil {
+			log.WithError(err).Error("Failed to generate billable Excel file")
+			respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "ExcelGenerationFailed", Message: fmt.Sprintf("Error generating Excel report: %v", err)})
+			return
+		}
+
+		// Save Excel to buffer
+		var buf bytes.Buffer
+		if err := excelFile.Write(&buf); err != nil {
+			log.WithError(err).Error("Failed to write Excel file to buffer")
+			respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "ExcelWriteFailed", Message: "Failed to write Excel file"})
+			return
+		}
+
+		// Sanitize client name for filename
+		safeClientName := url.PathEscape(clientName)                                                                                          // Basic sanitization
+		safeClientName = Mreplace(safeClientName, "/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_") // Replace common invalid chars
+
+		filename := fmt.Sprintf("billable_report_%s_%s.xlsx", safeClientName, time.Now().Format("20060102"))
+		contentType := "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+		respondWithFile(w, http.StatusOK, buf.Bytes(), contentType, filename)
+		log.Info("Successfully sent billable report as Excel file")
+
+	} else {
+		log.Info("Successfully generated billable report (JSON)")
+		respondWithJSON(w, http.StatusOK, reportOutput)
+	}
+}
+
+// Mreplace replaces multiple substrings in a string.
+func Mreplace(s string, replaces ...string) string {
+	if len(replaces)%2 != 0 {
+		panic("Mreplace requires pairs of old/new strings")
+	}
+	for i := 0; i < len(replaces); i += 2 {
+		s = strings.ReplaceAll(s, replaces[i], replaces[i+1])
+	}
+	return s
 }
 
 // --- Main Entry Point ---
@@ -450,17 +538,14 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register Auth routes
-	// Note: HandleFunc registers for the exact path. Use Handle for prefixes if needed,
-	// but for these specific auth actions, exact paths are fine.
 	mux.HandleFunc("/auth/clickup", serveAuthRequest)
 	mux.HandleFunc("/auth/callback", serveAuthRequest)
 	mux.HandleFunc("/auth/logout", serveAuthRequest)
 
 	// Register Report routes
 	mux.HandleFunc("/report/demo", serveDemoRequest)        // Specific demo report
-	mux.HandleFunc("/report/timetrack", serveReportRequest) // Other reports handled by serveReportRequest
-	mux.HandleFunc("/report/billable", serveReportRequest)  // Other reports handled by serveReportRequest
-	// Add more /report/* routes here if needed, pointing to serveReportRequest or new specific funcs
+	mux.HandleFunc("/report/timetrack", serveReportRequest) // Handles POST for time track (JSON/Excel)
+	mux.HandleFunc("/report/billable", serveReportRequest)  // Handles POST for billable (JSON/Excel)
 
 	// Add a root handler for basic health check or info page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -485,7 +570,7 @@ func main() {
 			Handler: mux, // Use the main router
 			// Add timeouts for production readiness
 			ReadTimeout:  15 * time.Second,
-			WriteTimeout: 60 * time.Second, // Longer write timeout for report generation
+			WriteTimeout: 90 * time.Second, // Increased write timeout for potentially larger Excel generation
 			IdleTimeout:  120 * time.Second,
 		}
 

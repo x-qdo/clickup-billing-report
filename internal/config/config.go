@@ -2,19 +2,16 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"sync"
 	"time"
 
-	"github.com/joho/godotenv"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/sirupsen/logrus"
 )
 
-// --- DataStore Interface (Moved from storage package) ---
-
-// DataStore defines the interface for accessing application configuration and state.
+// DataStore defines the interface for interacting with the configuration storage.
 type DataStore interface {
 	// Client operations
 	GetClient(ctx context.Context, name string) (*Client, error)
@@ -46,6 +43,7 @@ var (
 
 type StorageError struct {
 	message string
+	cause   error // Optional underlying cause
 }
 
 func NewStorageError(message string) *StorageError {
@@ -53,6 +51,9 @@ func NewStorageError(message string) *StorageError {
 }
 
 func (e *StorageError) Error() string {
+	if e.cause != nil {
+		return fmt.Sprintf("%s: %v", e.message, e.cause)
+	}
 	return e.message
 }
 
@@ -65,48 +66,56 @@ const (
 	DefaultDebugPort           = "5000"
 )
 
-// --- Configuration Structs ---
+// Unwrap returns the underlying cause, allowing errors.Is and errors.As to work.
+func (e *StorageError) Unwrap() error {
+	return e.cause
+}
 
-// Client represents the configuration for a specific client.
+// --- Data Structures ---
+
+// Client represents a customer or project entity.
 type Client struct {
 	Name             string    `dynamodbav:"Name" json:"name"` // Primary Key for Clients table
 	ClickUpListID    string    `dynamodbav:"ClickUpListID" json:"clickup_list_id"`
 	ClickUpTeamID    string    `dynamodbav:"ClickUpTeamID" json:"clickup_team_id"`
-	ContractIncluded float64   `dynamodbav:"ContractIncluded" json:"contract_included"`
+	ContractIncluded float64   `dynamodbav:"ContractIncluded" json:"contract_included"` // Included hours/value in contract
 	TogglSyncEnabled bool      `dynamodbav:"TogglSyncEnabled" json:"toggl_sync_enabled"`
 	TogglWorkspaceID string    `dynamodbav:"TogglWorkspaceID,omitempty" json:"toggl_workspace_id,omitempty"`
 	CreatedAt        time.Time `dynamodbav:"CreatedAt" json:"created_at"`
 	UpdatedAt        time.Time `dynamodbav:"UpdatedAt" json:"updated_at"`
+	// Add other client-specific settings as needed
 }
 
-// Developer represents a developer and their billing coefficient.
+// Developer represents a team member.
 type Developer struct {
 	Name        string    `dynamodbav:"Name" json:"name"` // Primary Key for Developers table
 	Coefficient float64   `dynamodbav:"Coefficient" json:"coefficient"`
-	ClickUpID   string    `dynamodbav:"ClickUpID,omitempty" json:"clickup_id,omitempty"` // Optional: ClickUp User ID if needed for filtering
+	ClickUpID   string    `dynamodbav:"ClickUpID,omitempty" json:"clickup_id,omitempty"` // Optional: ClickUp User ID
+	TogglID     string    `dynamodbav:"TogglID,omitempty" json:"toggl_id,omitempty"`     // Optional: Toggl User ID
 	CreatedAt   time.Time `dynamodbav:"CreatedAt" json:"created_at"`
 	UpdatedAt   time.Time `dynamodbav:"UpdatedAt" json:"updated_at"`
 }
 
-// GlobalSettings represents application-wide settings.
+// GlobalSettings holds application-wide configuration.
+// Secrets are loaded from environment variables, not stored directly in DynamoDB.
 type GlobalSettings struct {
 	SettingKey          string    `dynamodbav:"SettingKey"` // Primary Key (e.g., "global")
 	ClickUpClientID     string    `dynamodbav:"-"`          // Loaded from Env
 	ClickUpClientSecret string    `dynamodbav:"-"`          // Loaded from Env, not stored directly
+	SessionSecret       string    `dynamodbav:"-"`          // Loaded from Env for session encryption
+	BaseURL             string    `dynamodbav:"-"`          // Loaded from Env, base URL of the deployed app
 	DefaultDemoListID   string    `dynamodbav:"DefaultDemoListID,omitempty"`
 	DefaultDemoTeamID   string    `dynamodbav:"DefaultDemoTeamID,omitempty"`
 	SlackBotToken       string    `dynamodbav:"-"` // Loaded from Env, not stored directly
 	WikiAPIToken        string    `dynamodbav:"-"` // Loaded from Env, not stored directly
 	WikiBaseURL         string    `dynamodbav:"WikiBaseURL,omitempty"`
-	TogglAPIToken       string    `dynamodbav:"-"` // Loaded from Env, not stored directly
-	SessionSecret       string    `dynamodbav:"-"` // Loaded from Env for signing session cookies/tokens
-	BaseURL             string    `dynamodbav:"-"` // Application's base URL (from Env) for callbacks etc.
-	DebugMode           bool      `dynamodbav:"-"` // Loaded from Env (DEBUG_MODE)
-	DebugPort           string    `dynamodbav:"-"` // Loaded from Env (DEBUG_PORT)
-	UpdatedAt           time.Time `dynamodbav:"UpdatedAt,omitempty"`
+	TogglAPIToken       string    `dynamodbav:"-"`                   // Loaded from Env, not stored directly
+	DebugMode           bool      `dynamodbav:"-"`                   // Loaded from Env (e.g., "DEBUG_MODE=true")
+	DebugPort           string    `dynamodbav:"-"`                   // Loaded from Env (e.g., "DEBUG_PORT=8080")
+	UpdatedAt           time.Time `dynamodbav:"UpdatedAt,omitempty"` // When DB settings were last updated
 }
 
-// SessionState represents the data stored for an authenticated user session.
+// SessionState stores user session information, typically linked to an OAuth token.
 type SessionState struct {
 	SessionID    string    `dynamodbav:"SessionID"`    // Primary Key (e.g., secure random string)
 	ClickUpToken string    `dynamodbav:"ClickUpToken"` // Encrypted Access Token
@@ -117,15 +126,9 @@ type SessionState struct {
 	TTL          int64     `dynamodbav:"TTL,omitempty"` // DynamoDB TTL attribute
 }
 
-// --- Report Structs (Input/Output for API handlers) ---
+// --- Report Structures ---
 
-// BillableReportInput defines parameters for the billable report API endpoint.
-type BillableReportInput struct {
-	ListID          string `json:"list_id"`          // ClickUp List ID to generate the report for
-	RefreshInvoiced bool   `json:"refresh_invoiced"` // Flag to update InvoicedHours to match BillableHours
-}
-
-// BillableReportTask represents a task included in the billable report API response.
+// BillableReportTask represents a single task row in the billable report.
 type BillableReportTask struct {
 	TaskID          string   `json:"task_id"`
 	CustomID        string   `json:"custom_id"`
@@ -134,28 +137,28 @@ type BillableReportTask struct {
 	Tags            []string `json:"tags"`
 	BillableHours   float64  `json:"billable_hours"`
 	InvoicedHours   float64  `json:"invoiced_hours"`
-	MonthlyReported float64  `json:"monthly_reported"`
+	MonthlyReported float64  `json:"monthly_reported"` // Calculated: Billable - Invoiced
 	Reporter        string   `json:"reporter"`
-	Status          string   `json:"status"`
 	URL             string   `json:"url"`
 }
 
-// BillableReportTotals holds the sum of hours for the billable report API response.
+// BillableReportTotals represents the summary totals for the billable report.
 type BillableReportTotals struct {
 	BillableHours   float64 `json:"billable_hours"`
 	InvoicedHours   float64 `json:"invoiced_hours"`
 	MonthlyReported float64 `json:"monthly_reported"`
 }
 
-// BillableReportOutput holds the results of the billable report for the API response.
+// BillableReportOutput represents the complete data for the billable report.
 type BillableReportOutput struct {
-	Tasks  []BillableReportTask `json:"tasks"`
-	Totals BillableReportTotals `json:"totals"`
+	Tasks         []BillableReportTask `json:"tasks"`          // Non-internal tasks meeting criteria
+	InternalTasks []BillableReportTask `json:"internal_tasks"` // Tasks tagged as 'internal'
+	Totals        BillableReportTotals `json:"totals"`         // Totals for non-internal tasks
 }
 
-// --- Environment Variable Loading ---
+// --- Config Loading ---
 
-// LoadGlobalSettingsFromEnv loads sensitive or deployment-specific settings from environment variables.
+// LoadGlobalSettingsFromEnv loads settings primarily from environment variables.
 func LoadGlobalSettingsFromEnv(log *logrus.Entry) (*GlobalSettings, error) {
 	clientID := os.Getenv("CLICKUP_CLIENT_ID")
 	clientSecret := os.Getenv("CLICKUP_CLIENT_SECRET")
@@ -183,12 +186,9 @@ func LoadGlobalSettingsFromEnv(log *logrus.Entry) (*GlobalSettings, error) {
 		log.Warn("SESSION_SECRET should be at least 32 bytes long for optimal security")
 	}
 
-	// Load Debug Mode settings
-	debugModeStr := os.Getenv("DEBUG_MODE")
-	debugMode, _ := strconv.ParseBool(debugModeStr) // Defaults to false if parsing fails or var is empty
-
+	debugMode := os.Getenv("DEBUG_MODE") == "true"
 	debugPort := os.Getenv("DEBUG_PORT")
-	if debugPort == "" {
+	if debugMode && debugPort == "" {
 		debugPort = DefaultDebugPort
 	}
 
@@ -202,11 +202,9 @@ func LoadGlobalSettingsFromEnv(log *logrus.Entry) (*GlobalSettings, error) {
 		BaseURL:             baseURL,
 		DebugMode:           debugMode,
 		DebugPort:           debugPort,
-		// Non-secret fields like DefaultDemoListID, WikiBaseURL will be loaded/merged from DB
 	}, nil
 }
 
-// GetTableName returns the DynamoDB table name from env var or default.
 func GetTableName(envVar, defaultValue string) string {
 	name := os.Getenv(envVar)
 	if name == "" {
@@ -215,9 +213,6 @@ func GetTableName(envVar, defaultValue string) string {
 	return name
 }
 
-// --- AppConfig Singleton ---
-
-// AppConfig holds the fully loaded application configuration.
 type AppConfig struct {
 	Global     *GlobalSettings
 	Clients    map[string]Client    // Cache of clients, mapped by Name
@@ -226,127 +221,6 @@ type AppConfig struct {
 	Logger     *logrus.Logger
 }
 
-var (
-	appConfig *AppConfig
-	configErr error
-	once      sync.Once
-)
-
-// LoadConfig initializes and returns the application configuration using dependency injection for the store.
-// It ensures configuration is loaded only once (singleton pattern).
-func LoadConfig(ctx context.Context, store DataStore) (*AppConfig, error) {
-	once.Do(func() {
-		logger := logrus.New()
-		if os.Getenv("LOG_LEVEL") == "json" {
-			logger.SetFormatter(&logrus.JSONFormatter{})
-		}
-		logLevelStr := os.Getenv("LOG_LEVEL")
-		logLevel, err := logrus.ParseLevel(logLevelStr)
-		if err != nil {
-			logLevel = logrus.InfoLevel
-		}
-		logger.SetLevel(logLevel)
-		logEntry := logger.WithField("service", "config-loader")
-
-		logEntry.Info("Loading application configuration...")
-		_ = godotenv.Load() // Load .env file if present
-
-		// Load required settings from environment
-		globalSettingsEnv, err := LoadGlobalSettingsFromEnv(logEntry)
-		if err != nil {
-			configErr = fmt.Errorf("failed to load required settings from environment: %w", err)
-			logEntry.WithError(configErr).Fatal("Environment settings loading failed") // Fatal if required are missing
-			return
-		}
-		logEntry.Info("Required global settings loaded from environment")
-		if globalSettingsEnv.DebugMode {
-			logEntry.Warnf("DEBUG MODE ENABLED (Port: %s)", globalSettingsEnv.DebugPort)
-		}
-
-		// --- Store is now injected, no need to initialize it here ---
-		if store == nil {
-			configErr = fmt.Errorf("data store implementation was not provided to LoadConfig")
-			logEntry.WithError(configErr).Fatal("Data store is nil")
-			return
-		}
-		logEntry.Info("Data store provided")
-		// -----------------------------------------------------------
-
-		// Load non-sensitive global settings from DB
-		globalSettingsDB, err := store.GetGlobalSettings(ctx, "global")
-		if err != nil && err != ErrNotFound { // Use error defined in this package
-			configErr = fmt.Errorf("failed to load global settings from DB: %w", err)
-			logEntry.WithError(configErr).Error("DB settings loading failed")
-			// Don't return here, allow fallback to env settings
-		} else if err == ErrNotFound {
-			logEntry.Warn("Global settings not found in DB, using environment/defaults.")
-			// Optionally save initial settings from env to DB here if desired
-			// globalSettingsEnv.SettingKey = "global"
-			// _ = store.SaveGlobalSettings(ctx, *globalSettingsEnv)
-		} else {
-			logEntry.Info("Loaded global settings from DB")
-		}
-
-		// Merge DB settings into Env settings
-		finalGlobalSettings := mergeGlobalSettings(globalSettingsEnv, globalSettingsDB)
-		logEntry.Info("Merged global settings")
-
-		// Load clients and developers from DB
-		clientsList, err := store.ListClients(ctx)
-		if err != nil {
-			configErr = fmt.Errorf("failed to load clients: %w", err)
-			logEntry.WithError(configErr).Error("Failed loading clients from DB")
-			// Don't return, allow app to potentially run without clients if needed
-		}
-		clientsMap := make(map[string]Client)
-		for _, c := range clientsList {
-			clientsMap[c.Name] = c
-		}
-		logEntry.WithField("count", len(clientsMap)).Info("Loaded clients from DB")
-
-		developersList, err := store.ListDevelopers(ctx)
-		if err != nil {
-			configErr = fmt.Errorf("failed to load developers: %w", err)
-			logEntry.WithError(configErr).Error("Failed loading developers from DB")
-			// Don't return, allow app to potentially run without developers
-		}
-		developersMap := make(map[string]Developer)
-		for _, d := range developersList {
-			developersMap[d.Name] = d
-		}
-		logEntry.WithField("count", len(developersMap)).Info("Loaded developers from DB")
-
-		appConfig = &AppConfig{
-			Global:     finalGlobalSettings,
-			Clients:    clientsMap,
-			Developers: developersMap,
-			Store:      store, // Store the injected store
-			Logger:     logger,
-		}
-		logEntry.Info("Application configuration loaded successfully")
-	})
-
-	// Return the potentially partial config even if non-fatal errors occurred during loading
-	if appConfig == nil && configErr == nil {
-		// This should not happen if once.Do completed without fatal errors
-		return nil, fmt.Errorf("configuration loading failed silently")
-	}
-	// Return the config and any non-fatal error encountered
-	return appConfig, configErr
-}
-
-// GetConfig returns the already loaded configuration.
-// Panics if LoadConfig hasn't been called successfully first.
-func GetConfig() *AppConfig {
-	if appConfig == nil {
-		// Configuration must be loaded explicitly via LoadConfig in the main/init function.
-		panic("Configuration has not been loaded. Call config.LoadConfig first.")
-	}
-	return appConfig
-}
-
-// mergeGlobalSettings merges settings from DB into the Env-loaded struct.
-// Env settings (especially secrets and debug flags) take precedence.
 func mergeGlobalSettings(env *GlobalSettings, db *GlobalSettings) *GlobalSettings {
 	merged := *env // Start with env settings (secrets, debug flags)
 
@@ -357,7 +231,8 @@ func mergeGlobalSettings(env *GlobalSettings, db *GlobalSettings) *GlobalSetting
 
 	// Overwrite with DB values only if they are non-empty/non-zero
 	// and the corresponding env value is empty/zero (except for keys)
-	merged.SettingKey = db.SettingKey // Key always comes from DB if present
+	merged.SettingKey = db.SettingKey // Always take DB key if present
+
 	if merged.DefaultDemoListID == "" {
 		merged.DefaultDemoListID = db.DefaultDemoListID
 	}
@@ -367,8 +242,90 @@ func mergeGlobalSettings(env *GlobalSettings, db *GlobalSettings) *GlobalSetting
 	if merged.WikiBaseURL == "" {
 		merged.WikiBaseURL = db.WikiBaseURL
 	}
-	// Keep UpdatedAt from DB
-	merged.UpdatedAt = db.UpdatedAt
+	// Add other DB-overridable fields here
+
+	merged.UpdatedAt = db.UpdatedAt // Reflect DB update time
 
 	return &merged
+}
+
+func LoadConfig(ctx context.Context, store DataStore) (*AppConfig, error) {
+	logger := logrus.New()
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logLevelStr := os.Getenv("LOG_LEVEL")
+	logLevel, err := logrus.ParseLevel(logLevelStr)
+	if err != nil {
+		logLevel = logrus.InfoLevel
+	}
+	logger.SetLevel(logLevel)
+	logEntry := logger.WithField("service", "config-loader")
+
+	if store == nil {
+		return nil, fmt.Errorf("DataStore cannot be nil")
+	}
+
+	// 1. Load Global Settings from Env
+	envSettings, err := LoadGlobalSettingsFromEnv(logEntry)
+	if err != nil {
+		logEntry.WithError(err).Error("Failed to load critical settings from environment")
+		return nil, fmt.Errorf("failed to load environment settings: %w", err)
+	}
+	logger.SetLevel(logLevel) // Re-apply log level potentially derived from env settings
+
+	// 2. Load Global Settings from DB
+	dbSettings, err := store.GetGlobalSettings(ctx, "global")
+	if err != nil {
+		var itemNotFound *types.ResourceNotFoundException
+		if errors.As(err, &itemNotFound) {
+			logEntry.Warn("Global settings not found in database, using environment defaults.")
+			dbSettings = nil // Treat as empty settings
+		} else {
+			logEntry.WithError(err).Error("Failed to load global settings from database")
+			// Decide if this is fatal or if we can proceed with env settings only
+			// return nil, fmt.Errorf("failed to load DB settings: %w", err)
+			dbSettings = nil // Proceed with caution
+		}
+	}
+
+	// 3. Merge Global Settings
+	globalConfig := mergeGlobalSettings(envSettings, dbSettings)
+	if globalConfig.DebugMode {
+		logger.SetLevel(logrus.DebugLevel) // Set debug level if enabled
+		logEntry.Warn("Debug mode enabled")
+	}
+
+	// 4. Load Clients from DB
+	clientsList, err := store.ListClients(ctx)
+	if err != nil {
+		logEntry.WithError(err).Error("Failed to load clients from database")
+		return nil, fmt.Errorf("failed to load clients: %w", err)
+	}
+	clientsMap := make(map[string]Client)
+	for _, c := range clientsList {
+		clientsMap[c.Name] = c
+	}
+	logEntry.Infof("Loaded %d clients", len(clientsMap))
+
+	developersList, err := store.ListDevelopers(ctx)
+	if err != nil {
+		logEntry.WithError(err).Error("Failed to load developers from database")
+		return nil, fmt.Errorf("failed to load developers: %w", err)
+	}
+	developersMap := make(map[string]Developer)
+	for _, d := range developersList {
+		developersMap[d.Name] = d
+	}
+	logEntry.Infof("Loaded %d developers", len(developersMap))
+
+	// 6. Assemble AppConfig
+	appConf := &AppConfig{
+		Global:     globalConfig,
+		Clients:    clientsMap,
+		Developers: developersMap,
+		Store:      store,
+		Logger:     logger,
+	}
+
+	logEntry.Info("Application configuration loaded successfully")
+	return appConf, nil
 }

@@ -1,4 +1,4 @@
 *.csv
 __pycache__
-.env
+.env_file
 .aider*

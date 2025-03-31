@@ -22,8 +22,6 @@ const (
 	clickUpTokenURL   = "https://api.clickup.com/api/v2/oauth/token"
 	stateCookieName   = "clickup_auth_state"
 	sessionCookieName = "reporter_session"
-	// Scopes required by the application
-	requiredScopes = "" // ClickUp uses implicit scopes based on App settings
 )
 
 // Authenticator handles the OAuth2 flow with ClickUp.
