@@ -1,6 +1,20 @@
-import axios, { type AxiosInstance, type AxiosResponse } from 'axios';
+import axios, { type AxiosInstance, type AxiosResponse } from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+// --- Type Definitions ---
+
+// Based on Go config.Client struct
+export interface ApiClient {
+  name: string;
+  clickup_list_id: string;
+  clickup_team_id: string;
+  contract_included: number;
+  toggl_sync_enabled: boolean;
+  toggl_workspace_id?: string;
+  created_at: string; // Dates are typically serialized as ISO strings
+  updated_at: string;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 class ApiService {
   private client: AxiosInstance;
@@ -11,7 +25,7 @@ class ApiService {
       timeout: 30000,
       withCredentials: true,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
 
@@ -22,7 +36,7 @@ class ApiService {
       },
       (error) => {
         return Promise.reject(error);
-      }
+      },
     );
 
     // Response interceptor
@@ -33,17 +47,23 @@ class ApiService {
       (error) => {
         if (error.response?.status === 401) {
           // Clear any stored auth state and redirect to login
-          localStorage.removeItem('timeTrackingWizardState');
-          localStorage.removeItem('billableWizardState');
-          
+          localStorage.removeItem("timeTrackingWizardState");
+          localStorage.removeItem("billableWizardState");
+
           // Use React Router navigation instead of direct redirect
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login';
+          if (window.location.pathname !== "/login") {
+            window.location.href = "/login";
           }
         }
         return Promise.reject(error);
-      }
+      },
     );
+  }
+  // Specific API methods for the ClickUp Reporter
+
+  // Fetch list of clients
+  async listClients(): Promise<AxiosResponse<ApiClient[]>> {
+    return this.client.get<ApiClient[]>("/api/clients");
   }
 
   // Generic HTTP methods
@@ -55,10 +75,13 @@ class ApiService {
     return this.client.post(url, data);
   }
 
-  async postForm<T = any>(url: string, data: FormData | URLSearchParams): Promise<AxiosResponse<T>> {
+  async postForm<T = any>(
+    url: string,
+    data: FormData | URLSearchParams,
+  ): Promise<AxiosResponse<T>> {
     return this.client.post(url, data, {
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "Content-Type": "application/x-www-form-urlencoded",
       },
     });
   }
@@ -72,35 +95,35 @@ class ApiService {
   }
 
   // Specific API methods for the ClickUp Reporter
-  
+
   // Time Tracking Report
   async generateTimeTrackingReport(params: {
     report_date: string;
     refresh_billable?: boolean;
-    format?: 'json' | 'excel';
+    format?: "json" | "excel";
   }): Promise<AxiosResponse> {
     const formData = new URLSearchParams();
-    formData.append('report_date', params.report_date);
-    
+    formData.append("report_date", params.report_date);
+
     if (params.refresh_billable) {
-      formData.append('refresh_billable', 'on');
+      formData.append("refresh_billable", "on");
     }
-    
-    if (params.format === 'excel') {
-      formData.append('format', 'excel');
-      
+
+    if (params.format === "excel") {
+      formData.append("format", "excel");
+
       // For Excel downloads, we need to handle blob response
-      return this.client.post('/report/timetrack', formData, {
+      return this.client.post("/report/timetrack", formData, {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        responseType: 'blob',
+        responseType: "blob",
       });
     }
-    
-    return this.client.post('/report/timetrack', formData, {
+
+    return this.client.post("/report/timetrack", formData, {
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "Content-Type": "application/x-www-form-urlencoded",
       },
     });
   }
@@ -109,30 +132,30 @@ class ApiService {
   async generateBillableReport(params: {
     client_name: string;
     refresh_invoiced?: boolean;
-    format?: 'json' | 'excel';
+    format?: "json" | "excel";
   }): Promise<AxiosResponse> {
     const formData = new URLSearchParams();
-    formData.append('client_name', params.client_name);
-    
+    formData.append("client_name", params.client_name);
+
     if (params.refresh_invoiced) {
-      formData.append('refresh_invoiced', 'on');
+      formData.append("refresh_invoiced", "on");
     }
-    
-    if (params.format === 'excel') {
-      formData.append('format', 'excel');
-      
+
+    if (params.format === "excel") {
+      formData.append("format", "excel");
+
       // For Excel downloads, we need to handle blob response
-      return this.client.post('/report/billable', formData, {
+      return this.client.post("/report/billable", formData, {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        responseType: 'blob',
+        responseType: "blob",
       });
     }
-    
-    return this.client.post('/report/billable', formData, {
+
+    return this.client.post("/report/billable", formData, {
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "Content-Type": "application/x-www-form-urlencoded",
       },
     });
   }
@@ -140,7 +163,7 @@ class ApiService {
   // Auth methods
   async checkAuthStatus(): Promise<AxiosResponse> {
     try {
-      return await this.get('/auth/me');
+      return await this.get("/auth/me");
     } catch (error: any) {
       // Don't redirect on auth check failures to avoid infinite loops
       throw error;
@@ -149,15 +172,15 @@ class ApiService {
 
   async logout(): Promise<AxiosResponse> {
     try {
-      const response = await this.post('/auth/logout');
+      const response = await this.post("/auth/logout");
       // Clear wizard states on logout
-      localStorage.removeItem('timeTrackingWizardState');
-      localStorage.removeItem('billableWizardState');
+      localStorage.removeItem("timeTrackingWizardState");
+      localStorage.removeItem("billableWizardState");
       return response;
     } catch (error: any) {
       // Even if logout fails on server, clear local state
-      localStorage.removeItem('timeTrackingWizardState');
-      localStorage.removeItem('billableWizardState');
+      localStorage.removeItem("timeTrackingWizardState");
+      localStorage.removeItem("billableWizardState");
       throw error;
     }
   }
@@ -171,17 +194,17 @@ class ApiService {
   downloadFile(blob: Blob, filename: string): void {
     try {
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = filename;
-      link.style.display = 'none';
+      link.style.display = "none";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Failed to download file:', error);
-      throw new Error('Failed to download file');
+      console.error("Failed to download file:", error);
+      throw new Error("Failed to download file");
     }
   }
 
@@ -196,7 +219,7 @@ class ApiService {
     if (error.message) {
       return error.message;
     }
-    return 'An unexpected error occurred';
+    return "An unexpected error occurred";
   }
 }
 
