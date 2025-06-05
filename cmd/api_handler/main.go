@@ -331,6 +331,59 @@ func serveReportRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func serveClientsRequest(w http.ResponseWriter, r *http.Request) {
+	log := appConf.Logger.WithFields(logrus.Fields{
+		"method": r.Method,
+		"path":   r.URL.Path,
+	})
+	log.Info("Client list request received")
+
+	setCorsHeaders(w) // Set CORS headers early
+
+	// Handle OPTIONS request for CORS preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// --- Authentication Check ---
+	session, _, err := authenticator.GetSessionFromRequest(r)
+	if err != nil {
+		log.WithError(err).Error("Failed to get session from request")
+		respondWithJSON(w, http.StatusInternalServerError, map[string]string{"error": "SessionError", "message": "Could not process session"})
+		return
+	}
+	if session == nil {
+		log.Warn("User not authenticated for client list request")
+		respondWithJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized", "message": "Authentication required"})
+		return
+	}
+	userLogger := log.WithFields(logrus.Fields{"user_id": session.UserID})
+	userLogger.Info("User authenticated for client list request")
+	// ---------------------------
+
+	if r.Method != http.MethodGet {
+		userLogger.Warn("Method not allowed for client list request")
+		respondWithJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "MethodNotAllowed", "message": "Method Not Allowed, please use GET"})
+		return
+	}
+
+	clients, err := appConf.Store.ListClients(r.Context())
+	if err != nil {
+		userLogger.WithError(err).Error("Failed to list clients from store")
+		respondWithJSON(w, http.StatusInternalServerError, map[string]string{"error": "InternalError", "message": "Failed to retrieve client list"})
+		return
+	}
+
+	if clients == nil {
+		// Return an empty list instead of null if no clients are found.
+		clients = []config.Client{}
+	}
+
+	userLogger.Infof("Successfully retrieved %d clients", len(clients))
+	respondWithJSON(w, http.StatusOK, clients)
+}
+
 // parseHTTPFormParams extracts form parameters from an http.Request.
 // It handles both URL query parameters and form-urlencoded bodies.
 func parseHTTPFormParams(r *http.Request, log *logrus.Entry) (url.Values, error) {
@@ -582,6 +635,9 @@ func main() {
 	mux.HandleFunc("/report/demo", serveDemoRequest)        // Specific demo report
 	mux.HandleFunc("/report/timetrack", serveReportRequest) // Handles POST for time track (JSON/Excel)
 	mux.HandleFunc("/report/billable", serveReportRequest)  // Handles POST for billable (JSON/Excel)
+
+	// Register API routes
+	mux.HandleFunc("/api/clients", serveClientsRequest)
 
 	// Add a root handler for basic health check or info page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
