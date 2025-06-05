@@ -6,7 +6,7 @@ import {
   CloudArrowDownIcon,
   ExclamationTriangleIcon,
   ArrowsPointingOutIcon,
-  ArrowsPointingInIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import type { TimeTrackingData } from "../../types/api/timeTrackingTypes";
 import ReportSummary from "./ReportSummary";
@@ -58,29 +58,41 @@ const ReviewDataStep: React.FC<ReviewDataStepProps> = ({
               <DeveloperReport personalReport={reportData.personal_report} />
             )}
           {reportData.final_report && reportData.final_report.length > 0 && (
-            <div className={taskReportExpanded ? "col-span-full" : ""}>
+            <div>
               <div className="flex justify-end mb-2">
                 <button
-                  onClick={() => setTaskReportExpanded(!taskReportExpanded)}
+                  onClick={() => setTaskReportExpanded(true)}
                   className="p-1 text-gray-500 hover:text-gray-700 focus:outline-none"
-                  aria-label={
-                    taskReportExpanded
-                      ? "Collapse task report"
-                      : "Expand task report"
-                  }
+                  aria-label="Expand task report"
                 >
-                  {taskReportExpanded ? (
-                    <ArrowsPointingInIcon className="h-5 w-5" />
-                  ) : (
-                    <ArrowsPointingOutIcon className="h-5 w-5" />
-                  )}
+                  <ArrowsPointingOutIcon className="h-5 w-5" />
                 </button>
               </div>
               <TaskReport
                 finalReport={reportData.final_report}
-                isExpanded={taskReportExpanded}
+                isExpanded={false}
                 internalTag={internalTagForTasks}
               />
+
+              {/* Modal for Fullscreen Task Report */}
+              {taskReportExpanded && (
+                <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-lg shadow-xl w-full h-full overflow-y-auto p-6 relative">
+                    <button
+                      onClick={() => setTaskReportExpanded(false)}
+                      className="absolute top-4 right-4 p-2 text-gray-600 hover:text-gray-900 bg-white rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 z-10"
+                      aria-label="Close task report"
+                    >
+                      <XMarkIcon className="h-6 w-6" />
+                    </button>
+                    <TaskReport
+                      finalReport={reportData.final_report}
+                      isExpanded={true}
+                      internalTag={internalTagForTasks}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {(!reportData.totals || reportData.totals.length === 0) &&

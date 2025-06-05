@@ -169,7 +169,7 @@ const TaskReport: React.FC<TaskReportProps> = ({
   }
 
   return (
-    <div className="mt-6 flex flex-col">
+    <div className={`${isExpanded ? "" : "mt-6"} flex flex-col`}>
       <div className={scrollAndMarginsDivClass}>
         <div className={paddingAndMinWidthDivClass}>
           {renderTaskTable(
