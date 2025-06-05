@@ -183,6 +183,41 @@ func serveAuthRequest(w http.ResponseWriter, r *http.Request) {
 		//}
 		http.Redirect(w, r, redirectTarget, http.StatusFound) // Redirect to root or configured URL
 
+	case "/auth/me": // Check authentication status
+		if r.Method != "GET" {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		setCorsHeaders(w)
+
+		session, sessionID, err := authenticator.GetSessionFromRequest(r)
+		if err != nil {
+			log.WithError(err).Error("Failed to get session from request")
+			respondWithJSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"authenticated": false,
+				"error":         "Invalid session",
+			})
+			return
+		}
+
+		if session == nil || sessionID == "" {
+			log.Info("No valid session found")
+			respondWithJSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"authenticated": false,
+			})
+			return
+		}
+
+		log.WithField("user_id", session.UserID).Info("User authentication status checked")
+		respondWithJSON(w, http.StatusOK, map[string]interface{}{
+			"authenticated": true,
+			"user": map[string]interface{}{
+				"id":       session.UserID,
+				"username": session.UserName,
+			},
+		})
+
 	default:
 		// This case should ideally not be reached if the main router is configured correctly
 		log.WithField("actual_path", r.URL.Path).Warn("Auth handler received request for unexpected sub-path")
@@ -541,6 +576,7 @@ func main() {
 	mux.HandleFunc("/auth/clickup", serveAuthRequest)
 	mux.HandleFunc("/auth/callback", serveAuthRequest)
 	mux.HandleFunc("/auth/logout", serveAuthRequest)
+	mux.HandleFunc("/auth/me", serveAuthRequest)
 
 	// Register Report routes
 	mux.HandleFunc("/report/demo", serveDemoRequest)        // Specific demo report
