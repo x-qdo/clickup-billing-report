@@ -118,6 +118,44 @@ func (s *Service) GenerateBillableReport(ctx context.Context, input BillableRepo
 		// Check if task is internal
 		if isInternalTask(task) {
 			s.log.WithField("task_id", task.CustomID).Debug("Identified internal task")
+			// Update ClickUp InvoicedHours if refreshInvoiced is true for internal tasks
+			if input.RefreshInvoiced {
+				// Only update if the new value (billableHours) is different from the current invoicedHours
+				// to avoid unnecessary API calls. The invoicedFieldID is guaranteed to be present here
+				// due to earlier checks that would terminate the function.
+				if math.Abs(billableHours-invoicedHours) > 0.001 {
+					s.log.WithFields(logrus.Fields{
+						"task_id":      task.CustomID,
+						"field_id":     invoicedFieldID,
+						"current_inv":  invoicedHours,
+						"new_inv_val":  billableHours,   // Set Invoiced = Billable
+						"monthly_diff": monthlyReported, // This is the diff *before* update
+					}).Info("Updating InvoicedHours custom field to match BillableHours for internal task")
+
+					errUpdate := cuClient.UpdateTaskCustomField(ctx, task.ID, invoicedFieldID, billableHours)
+					if errUpdate != nil {
+						s.log.WithError(errUpdate).WithFields(logrus.Fields{
+							"task_id":  task.CustomID,
+							"field_id": invoicedFieldID,
+						}).Error("Failed to update InvoicedHours custom field for internal task")
+					} else {
+						s.log.WithField("task_id", task.CustomID).Debug("InvoicedHours updated successfully for internal task")
+						// The report will reflect the state *before* this update.
+						// The update ensures it's "cleared" for the next reporting cycle.
+						// We do not modify local `invoicedHours` or `monthlyReported` here,
+						// so the current report reflects values *before* this specific update,
+						// consistent with non-internal task handling.
+					}
+				} else {
+					s.log.WithFields(logrus.Fields{
+						"task_id":     task.CustomID,
+						"billable":    billableHours,
+						"invoiced":    invoicedHours,
+						"monthly_rep": monthlyReported,
+					}).Debug("Skipping InvoicedHours update for internal task as it already matches BillableHours (or difference is negligible)")
+				}
+			}
+
 			internalReportTask := config.BillableReportTask{
 				TaskID:          task.ID,
 				CustomID:        task.CustomID,
