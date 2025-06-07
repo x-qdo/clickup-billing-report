@@ -639,16 +639,33 @@ func main() {
 	// Register API routes
 	mux.HandleFunc("/api/clients", serveClientsRequest)
 
+	// --- Serve Static Files (Frontend) ---
+	// The /dist/ path prefix is stripped before being handled by the FileServer.
+	// This means if a request comes in for /dist/index.html, the FileServer
+	// will look for ./dist/index.html relative to the executable.
+	// In the Docker container, the 'dist' directory (from frontend build)
+	// is copied to /dist, which is at the same level as the /main executable.
+	// So, when running in the container, it will serve files from /dist.
+	// When running locally (if you have a ./dist folder), it will serve from there.
+	fs := http.FileServer(http.Dir("./dist"))
+	mux.Handle("/dist/", http.StripPrefix("/dist/", fs))
+
 	// Add a root handler for basic health check or info page
+	// This also acts as a catch-all for any routes not explicitly defined above.
+	// If a request is made to / (root), it serves the index.html from the dist folder.
+	// Otherwise, for any other unhandled path, it returns a 404.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Prevent accidental matches for paths not explicitly handled
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
+		if r.URL.Path == "/" {
+			// If running in debug mode and accessing root, serve index.html from dist
+			// This is a common pattern for SPAs.
+			// Ensure your frontend router handles client-side routing appropriately.
+			http.ServeFile(w, r, "./dist/index.html")
+			log.Debug("Root path '/' accessed, serving ./dist/index.html")
 			return
 		}
-		log.Debug("Root path '/' accessed")
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintln(w, "API Handler Running")
+		// For any other path not matched by other handlers or static files, return 404.
+		http.NotFound(w, r)
+		log.Debugf("Path '%s' not found", r.URL.Path)
 	})
 
 	// --- Start Server or Lambda ---
