@@ -28,11 +28,27 @@ const TaskDetails: React.FC<TaskDetailsProps> = ({
     return task.name;
   };
 
-  const getHourValue = (task: Task) => {
+  const getCurrentPeriodHours = (task: Task) => {
     if (type === "timetracking") {
       return (task as TimeTrackingTask).adjusted_hours;
     }
-    return (task as BillableTask).billable_hours;
+    return (task as BillableTask).monthly_reported;
+  };
+
+  const getPreviousPeriodHours = (task: Task) => {
+    return task.invoiced_hours;
+  };
+
+  const getTotalHours = (task: Task) => {
+    return getCurrentPeriodHours(task) + getPreviousPeriodHours(task);
+  };
+
+  const getPriority = (task: Task) => {
+    return task.priority || "-";
+  };
+
+  const getReporter = (task: Task) => {
+    return task.reporter || "-";
   };
 
   const getTypeColor = () => {
@@ -105,8 +121,22 @@ const TaskDetails: React.FC<TaskDetailsProps> = ({
                       </h4>
                       <div className="flex flex-wrap gap-4 text-xs text-gray-600">
                         <span>
-                          <strong>Hours:</strong>{" "}
-                          {getHourValue(task).toFixed(1)}
+                          <strong>This Period:</strong>{" "}
+                          {getCurrentPeriodHours(task).toFixed(1)}h
+                        </span>
+                        <span>
+                          <strong>Previous Periods:</strong>{" "}
+                          {getPreviousPeriodHours(task).toFixed(1)}h
+                        </span>
+                        <span className="text-gray-700 font-semibold">
+                          <strong>Total:</strong>{" "}
+                          {getTotalHours(task).toFixed(1)}h
+                        </span>
+                        <span>
+                          <strong>Priority:</strong> {getPriority(task)}
+                        </span>
+                        <span>
+                          <strong>Requested by:</strong> {getReporter(task)}
                         </span>
                         {type === "timetracking" && (
                           <>
@@ -115,28 +145,8 @@ const TaskDetails: React.FC<TaskDetailsProps> = ({
                               {(task as TimeTrackingTask).client}
                             </span>
                             <span>
-                              <strong>Billable:</strong>{" "}
-                              {(
-                                task as TimeTrackingTask
-                              ).calculated_billable_hours.toFixed(1)}
-                            </span>
-                            <span>
                               <strong>Status:</strong>{" "}
                               {(task as TimeTrackingTask).status}
-                            </span>
-                          </>
-                        )}
-                        {type !== "timetracking" && (
-                          <>
-                            <span>
-                              <strong>Invoiced:</strong>{" "}
-                              {(task as BillableTask).invoiced_hours.toFixed(1)}
-                            </span>
-                            <span>
-                              <strong>Reported:</strong>{" "}
-                              {(task as BillableTask).monthly_reported.toFixed(
-                                1,
-                              )}
                             </span>
                           </>
                         )}

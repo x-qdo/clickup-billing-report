@@ -2,17 +2,16 @@ export interface BaseTask {
   task_id: string;
   custom_id: string;
   name: string;
-  task_name?: string;
   url: string;
   tags?: string[];
-  priority?: string;
+  priority: string;
+  reporter: string;
 }
 
 export interface BillableTask extends BaseTask {
   billable_hours: number;
   invoiced_hours: number;
   monthly_reported: number;
-  reporter?: string;
 }
 
 export interface TimeTrackingTask extends BaseTask {

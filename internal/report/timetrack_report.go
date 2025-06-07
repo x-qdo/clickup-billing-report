@@ -35,12 +35,14 @@ type FinalReportTask struct {
 	TaskID             string   `json:"task_id"`
 	CustomID           string   `json:"custom_id"`
 	Tags               []string `json:"tags"`
-	TaskName           string   `json:"task_name"`
+	TaskName           string   `json:"name"`
 	Client             string   `json:"client"`
 	AdjustedDuration   float64  `json:"adjusted_hours"`            // Rounded to 0.5h for the reporting period
 	InvoicedHours      float64  `json:"invoiced_hours"`            // Value at the time of report generation
 	CalculatedBillable float64  `json:"calculated_billable_hours"` // Invoiced + Adjusted for the period
 	Status             string   `json:"status"`                    // Task status
+	Priority           string   `json:"priority"`                  // Task priority
+	Reporter           string   `json:"reporter"`                  // Requested by field
 	URL                string   `json:"url"`                       // Task URL
 }
 
@@ -88,6 +90,7 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 	taskBillableFieldID := make(map[string]string)         // taskID -> BillableHours Field ID (maps task ID to field ID)
 	listBillableFieldIDCache := make(map[string]string)    // listID -> BillableHours Field ID (cache per list)
 	listInvoicedFieldIDCache := make(map[string]string)    // listID -> InvoicedHours Field ID (cache per list)
+	listReporterFieldIDCache := make(map[string]string)    // listID -> Reporter Field ID (cache per list)
 
 	// 2. Fetch Data per Client
 	for clientName, clientCfg := range clients {
@@ -137,6 +140,18 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 				s.log.WithField("list_id", clientCfg.ClickUpListID).Debugf("Found '%s' field ID: %s", InvoicedHoursField, id)
 				invoicedFieldID = id
 				listInvoicedFieldIDCache[clientCfg.ClickUpListID] = id
+			}
+		}
+		_, okR := listReporterFieldIDCache[clientCfg.ClickUpListID]
+		if !okR {
+			id, err := cuClient.GetCustomFieldID(ctx, clientCfg.ClickUpListID, ReportedByField)
+			if err != nil {
+				s.log.WithError(err).
+					WithFields(logrus.Fields{"client": clientName, "list_id": clientCfg.ClickUpListID}).
+					Warnf("Could not find '%s' custom field ID", ReportedByField)
+			} else {
+				s.log.WithField("list_id", clientCfg.ClickUpListID).Debugf("Found '%s' field ID: %s", ReportedByField, id)
+				listReporterFieldIDCache[clientCfg.ClickUpListID] = id
 			}
 		}
 
@@ -339,6 +354,21 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 			taskTags[i] = t.Name
 		}
 
+		// Extract priority and reporter info
+		priority := "-"
+		if task.Priority != nil {
+			priority = task.Priority.Priority
+		}
+		reporter := "-"
+		if reporterFieldID := listReporterFieldIDCache[task.List.ID]; reporterFieldID != "" {
+			if reporterVal, err := getCustomFieldValueByID(task, reporterFieldID); err == nil {
+				reporterStr := parseValueAsString(reporterVal, ReportedByField, task.CustomID, s.log)
+				if reporterStr != "-" {
+					reporter = reporterStr
+				}
+			}
+		}
+
 		finalReportTasks = append(finalReportTasks, FinalReportTask{
 			TaskID:             task.ID,
 			CustomID:           task.CustomID,
@@ -349,6 +379,8 @@ func (s *Service) GenerateTimeTrackingReport(ctx context.Context, input TimeTrac
 			InvoicedHours:      invoicedHours,
 			CalculatedBillable: calculatedBillable,
 			Status:             task.Status.Status,
+			Priority:           priority,
+			Reporter:           reporter,
 			URL:                task.URL,
 		})
 

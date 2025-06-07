@@ -46,10 +46,11 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
   const internalTasksCount = reportData?.internal_tasks?.length || 0;
 
   const totalBillableHours =
-    reportData?.tasks?.reduce((sum, task) => sum + task.billable_hours, 0) || 0;
+    reportData?.tasks?.reduce((sum, task) => sum + task.monthly_reported, 0) ||
+    0;
   const totalInternalHours =
     reportData?.internal_tasks?.reduce(
-      (sum, task) => sum + task.billable_hours,
+      (sum, task) => sum + task.monthly_reported,
       0,
     ) || 0;
 
@@ -100,7 +101,7 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
             <dl className="grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2">
               <div className="sm:col-span-1">
                 <dt className="text-sm font-medium text-gray-500">
-                  Total Billable Hours
+                  Billable Hours
                 </dt>
                 <dd className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">
                   {totalBillableHours.toFixed(1)}
@@ -108,7 +109,7 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
               </div>
               <div className="sm:col-span-1">
                 <dt className="text-sm font-medium text-gray-500">
-                  Total Internal Hours
+                  Internal Hours
                 </dt>
                 <dd className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">
                   {totalInternalHours.toFixed(1)}
