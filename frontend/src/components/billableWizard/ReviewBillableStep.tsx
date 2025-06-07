@@ -1,25 +1,13 @@
-import React from 'react';
+import React from "react";
 import {
   CheckCircleIcon,
   CloudArrowDownIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ExclamationTriangleIcon,
-} from '@heroicons/react/24/outline';
-import TaskDetails from '../shared/TaskDetails';
-
-interface BillableReportTask {
-  task_id: string;
-  custom_id: string;
-  name: string;
-  priority?: string;
-  tags?: string[];
-  billable_hours: number;
-  invoiced_hours: number;
-  monthly_reported: number;
-  reporter?: string;
-  url: string;
-}
+} from "@heroicons/react/24/outline";
+import TaskDetails from "../shared/TaskDetails";
+import type { BillableTask } from "../../types/shared/taskTypes";
 
 interface BillableReportTotals {
   total_billable_hours?: number;
@@ -30,8 +18,8 @@ interface BillableReportTotals {
 }
 
 export interface BillableReportData {
-  tasks?: BillableReportTask[];
-  internal_tasks?: BillableReportTask[];
+  tasks?: BillableTask[];
+  internal_tasks?: BillableTask[];
   totals?: BillableReportTotals;
 }
 
@@ -57,8 +45,13 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
   const billableTasksCount = reportData?.tasks?.length || 0;
   const internalTasksCount = reportData?.internal_tasks?.length || 0;
 
-  const totalBillableHours = reportData?.tasks?.reduce((sum, task) => sum + task.billable_hours, 0) || 0;
-  const totalInternalHours = reportData?.internal_tasks?.reduce((sum, task) => sum + task.billable_hours, 0) || 0;
+  const totalBillableHours =
+    reportData?.tasks?.reduce((sum, task) => sum + task.billable_hours, 0) || 0;
+  const totalInternalHours =
+    reportData?.internal_tasks?.reduce(
+      (sum, task) => sum + task.billable_hours,
+      0,
+    ) || 0;
 
   return (
     <div className="space-y-6">
@@ -68,7 +61,9 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
           Review Billable Tasks
         </h3>
         <p className="mt-1 text-sm text-gray-600">
-          Review the billable tasks for <strong>{clientName || 'the selected client'}</strong> and verify totals.
+          Review the billable tasks for{" "}
+          <strong>{clientName || "the selected client"}</strong> and verify
+          totals.
         </p>
       </div>
 
@@ -123,7 +118,7 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
           </div>
 
           {/* Task Details Sections */}
-          {(reportData.tasks && reportData.tasks.length > 0) ? (
+          {reportData.tasks && reportData.tasks.length > 0 ? (
             <TaskDetails
               title={`Billable Tasks (${billableTasksCount})`}
               tasks={reportData.tasks}
@@ -132,12 +127,14 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
               className="mb-4"
             />
           ) : (
-             <div className="bg-yellow-50 border border-yellow-300 rounded-md p-4 mb-4">
-                <p className="text-sm text-yellow-700">No billable tasks found for this client.</p>
+            <div className="bg-yellow-50 border border-yellow-300 rounded-md p-4 mb-4">
+              <p className="text-sm text-yellow-700">
+                No billable tasks found for this client.
+              </p>
             </div>
           )}
 
-          {(reportData.internal_tasks && reportData.internal_tasks.length > 0) ? (
+          {reportData.internal_tasks && reportData.internal_tasks.length > 0 ? (
             <TaskDetails
               title={`Internal Tasks (${internalTasksCount})`}
               tasks={reportData.internal_tasks}
@@ -147,7 +144,7 @@ const ReviewBillableStep: React.FC<ReviewBillableStepProps> = ({
             />
           ) : (
             <div className="bg-gray-50 border border-gray-300 rounded-md p-4 mb-4">
-                <p className="text-sm text-gray-700">No internal tasks found.</p>
+              <p className="text-sm text-gray-700">No internal tasks found.</p>
             </div>
           )}
         </>

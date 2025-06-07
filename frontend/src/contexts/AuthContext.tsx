@@ -32,7 +32,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       setIsLoading(true);
       const response = await apiService.checkAuthStatus();
-      setUser(response.data);
+      setUser(response.data.user);
     } catch (error) {
       setUser(null);
       // Don't log auth check failures as they're expected when not logged in

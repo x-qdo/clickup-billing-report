@@ -63,9 +63,6 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ totals }) => {
                     />
                   </div>
                   <div className="ml-3 w-0 flex-1">
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Adjusted Billable Hours
-                    </dt>
                     <dd className="text-xl font-bold text-indigo-600">
                       {item.adjusted_hours.toFixed(2)} hours
                     </dd>

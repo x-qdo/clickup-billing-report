@@ -4,41 +4,12 @@ import {
   ChevronRightIcon,
   ArrowTopRightOnSquareIcon,
 } from "@heroicons/react/24/outline";
-
-interface BaseTask {
-  task_id: string;
-  custom_id: string;
-  name?: string;
-  task_name?: string;
-  url: string;
-  tags?: string[];
-  priority?: string;
-}
-
-interface BillableTask extends BaseTask {
-  billable_hours: number;
-  invoiced_hours: number;
-  monthly_reported: number;
-  reporter?: string;
-}
-
-interface TimeTrackingTask extends BaseTask {
-  client: string;
-  adjusted_hours: number;
-  invoiced_hours: number;
-  calculated_billable_hours: number;
-  status: string;
-}
-
-type Task = BillableTask | TimeTrackingTask;
-
-interface TaskDetailsProps {
-  title: string;
-  tasks: Task[];
-  type: "billable" | "internal" | "timetracking";
-  totalHours?: number;
-  className?: string;
-}
+import type {
+  Task,
+  BillableTask,
+  TimeTrackingTask,
+  TaskDetailsProps,
+} from "../../types/shared/taskTypes";
 
 const TaskDetails: React.FC<TaskDetailsProps> = ({
   title,
@@ -142,6 +113,12 @@ const TaskDetails: React.FC<TaskDetailsProps> = ({
                             <span>
                               <strong>Client:</strong>{" "}
                               {(task as TimeTrackingTask).client}
+                            </span>
+                            <span>
+                              <strong>Billable:</strong>{" "}
+                              {(
+                                task as TimeTrackingTask
+                              ).calculated_billable_hours.toFixed(1)}
                             </span>
                             <span>
                               <strong>Status:</strong>{" "}
