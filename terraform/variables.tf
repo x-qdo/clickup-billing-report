@@ -32,3 +32,27 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "domain_name" {
+  description = "ClickUp API key for authentication."
+  type        = string
+  default     = "clickup.k9s.qdo.ee"
+}
+
+variable "hosted_zone_name" {
+  type    = string
+  default = "k9s.qdo.ee"
+}
+variable "name_prefix" {
+  type    = string
+  default = "clickup-report"
+}
+variable "image_tag" {
+  type    = string
+  default = "20250607-9"
+}
+
+variable "enable_cors" {
+  type    = bool
+  default = true
+}
