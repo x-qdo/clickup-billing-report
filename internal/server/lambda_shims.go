@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -70,19 +71,21 @@ func NewRequestFromEvent(ctx context.Context, event events.APIGatewayProxyReques
 	}
 
 	// Create request body reader
-	var bodyReader strings.Reader
+	var bodyIOReader *strings.Reader
 	if event.IsBase64Encoded {
-		// Note: Base64 decoding should ideally happen before calling this function
-		// if the body is needed, as this function doesn't handle it.
-		// For now, pass the encoded string if necessary.
-		// Consider adding decoding here if required by consumers of the *http.Request.
-		bodyReader = *strings.NewReader(event.Body) // Pass potentially encoded body
+		// The event body is base64 encoded, so decode it.
+		// This addresses the concern in the original comment about not handling decoding.
+		decodedBodyBytes, err := base64.StdEncoding.DecodeString(event.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 body: %w", err)
+		}
+		bodyIOReader = strings.NewReader(string(decodedBodyBytes))
 	} else {
-		bodyReader = *strings.NewReader(event.Body)
+		bodyIOReader = strings.NewReader(event.Body)
 	}
 
 	// Create request
-	req, err := http.NewRequestWithContext(ctx, event.HTTPMethod, u.String(), &bodyReader)
+	req, err := http.NewRequestWithContext(ctx, event.HTTPMethod, u.String(), bodyIOReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request from event: %w", err)
 	}
