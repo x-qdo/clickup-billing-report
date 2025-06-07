@@ -1,64 +1,43 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import React from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import {
   ClockIcon,
   CurrencyDollarIcon,
   DocumentTextIcon,
   ChartBarIcon,
   ArrowRightIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
 
   const quickActions = [
     {
-      name: 'Time Tracking Report',
-      description: 'Generate monthly time tracking reports with developer coefficients',
-      href: '/timetracking',
+      name: "Time Tracking Report",
+      description:
+        "Generate monthly time tracking reports with developer coefficients",
+      href: "/timetracking",
       icon: ClockIcon,
-      color: 'bg-blue-500 hover:bg-blue-600',
+      color: "bg-blue-500 hover:bg-blue-600",
       steps: [
-        'Select report month',
-        'Review calculated hours',
-        'Update ClickUp billable fields',
+        "Select report month",
+        "Review calculated hours",
+        "Update ClickUp billable fields",
       ],
     },
     {
-      name: 'Billable Report',
-      description: 'Create client-specific billable reports and mark tasks as invoiced',
-      href: '/billable',
+      name: "Billable Report",
+      description:
+        "Create client-specific billable reports and mark tasks as invoiced",
+      href: "/billable",
       icon: CurrencyDollarIcon,
-      color: 'bg-green-500 hover:bg-green-600',
+      color: "bg-green-500 hover:bg-green-600",
       steps: [
-        'Select client',
-        'Review billable tasks',
-        'Update invoiced status',
+        "Select client",
+        "Review billable tasks",
+        "Update invoiced status",
       ],
-    },
-  ];
-
-  const features = [
-    {
-      name: 'OAuth2 Authentication',
-      description: 'Secure integration with your ClickUp workspace',
-      icon: DocumentTextIcon,
-    },
-    {
-      name: 'Automated Calculations',
-      description: 'Apply developer coefficients and aggregate time entries',
-      icon: ChartBarIcon,
-    },
-    {
-      name: 'Excel Export',
-      description: 'Export reports in professional Excel format',
-      icon: DocumentTextIcon,
-    },
-    {
-      name: 'Field Updates',
-      description: 'Automatically update ClickUp custom fields',
-      icon: ChartBarIcon,
     },
   ];
 
@@ -67,7 +46,7 @@ const Dashboard: React.FC = () => {
       {/* Welcome Section */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">
-          Welcome back, {user?.username || 'User'}!
+          Welcome back, {user?.username || "User"}!
         </h1>
         <p className="mt-1 text-sm text-gray-600">
           Generate time tracking and billable reports from your ClickUp data
@@ -76,7 +55,9 @@ const Dashboard: React.FC = () => {
 
       {/* Quick Actions */}
       <div className="mb-8">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
+        <h2 className="text-lg font-medium text-gray-900 mb-4">
+          Quick Actions
+        </h2>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {quickActions.map((action) => (
             <div
@@ -85,7 +66,9 @@ const Dashboard: React.FC = () => {
             >
               <div className="p-6">
                 <div className="flex items-center">
-                  <div className={`flex-shrink-0 p-3 rounded-md ${action.color}`}>
+                  <div
+                    className={`flex-shrink-0 p-3 rounded-md ${action.color}`}
+                  >
                     <action.icon className="h-6 w-6 text-white" />
                   </div>
                   <div className="ml-4 flex-1">
@@ -97,9 +80,11 @@ const Dashboard: React.FC = () => {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="mt-4">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Steps:</h4>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    Steps:
+                  </h4>
                   <ol className="text-sm text-gray-600 space-y-1">
                     {action.steps.map((step, index) => (
                       <li key={index} className="flex items-center">
@@ -111,7 +96,7 @@ const Dashboard: React.FC = () => {
                     ))}
                   </ol>
                 </div>
-                
+
                 <div className="mt-6">
                   <Link
                     to={action.href}
@@ -127,28 +112,6 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Features Overview */}
-      <div className="mb-8">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Features</h2>
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {features.map((feature) => (
-              <div key={feature.name} className="text-center">
-                <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100">
-                  <feature.icon className="h-6 w-6 text-gray-600" />
-                </div>
-                <h3 className="mt-4 text-sm font-medium text-gray-900">
-                  {feature.name}
-                </h3>
-                <p className="mt-2 text-xs text-gray-600">
-                  {feature.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* Workflow Information */}
       <div className="bg-blue-50 rounded-lg p-6">
         <h3 className="text-lg font-medium text-blue-900 mb-3">
@@ -157,19 +120,24 @@ const Dashboard: React.FC = () => {
         <div className="prose prose-sm text-blue-800">
           <ol className="space-y-2">
             <li>
-              <strong>Generate Time Tracking Report:</strong> Start with reviewing time entries without updating ClickUp fields
+              <strong>Generate Time Tracking Report:</strong> Start with
+              reviewing time entries without updating ClickUp fields
             </li>
             <li>
-              <strong>Review & Verify:</strong> Check calculations, developer coefficients, and task assignments
+              <strong>Review & Verify:</strong> Check calculations, developer
+              coefficients, and task assignments
             </li>
             <li>
-              <strong>Update Billable Fields:</strong> Re-run the report with field updates enabled
+              <strong>Update Billable Fields:</strong> Re-run the report with
+              field updates enabled
             </li>
             <li>
-              <strong>Generate Billable Report:</strong> Create client-specific reports for invoicing
+              <strong>Generate Billable Report:</strong> Create client-specific
+              reports for invoicing
             </li>
             <li>
-              <strong>Mark as Invoiced:</strong> Update invoiced status to track billing progress
+              <strong>Mark as Invoiced:</strong> Update invoiced status to track
+              billing progress
             </li>
           </ol>
         </div>
