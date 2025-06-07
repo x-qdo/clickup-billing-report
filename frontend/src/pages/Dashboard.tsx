@@ -4,8 +4,6 @@ import { useAuth } from "../contexts/AuthContext";
 import {
   ClockIcon,
   CurrencyDollarIcon,
-  DocumentTextIcon,
-  ChartBarIcon,
   ArrowRightIcon,
 } from "@heroicons/react/24/outline";
 

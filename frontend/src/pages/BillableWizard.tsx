@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { apiService } from "../services/api";
 import { CheckCircleIcon } from "@heroicons/react/24/outline";
 import SelectClientStep from "../components/billableWizard/SelectClientStep";
-import InitialReportStep from "../components/billableWizard/InitialReportStep";
 import ReviewBillableStep from "../components/billableWizard/ReviewBillableStep";
 import MarkInvoicedStep from "../components/billableWizard/MarkInvoicedStep";
 import BillableCompleteStep from "../components/billableWizard/BillableCompleteStep";
@@ -50,18 +49,13 @@ const BillableWizard: React.FC = () => {
   const steps: WizardStep[] = [
     {
       id: "select-client",
-      title: "Select Client",
-      completed: state.currentStep > 0 && state.clientName !== "",
-    },
-    {
-      id: "initial-report",
-      title: "Generate Billable Report",
+      title: "Select Client & Generate Report",
       completed: state.initialReportGenerated,
     },
     {
       id: "review-billable",
       title: "Review Billable Tasks",
-      completed: state.currentStep > 2 && state.initialReportGenerated,
+      completed: state.currentStep > 1 && state.initialReportGenerated,
     },
     {
       id: "final-report",
@@ -71,7 +65,7 @@ const BillableWizard: React.FC = () => {
     {
       id: "complete",
       title: "Complete",
-      completed: state.finalReportGenerated && state.currentStep >= 4,
+      completed: state.finalReportGenerated && state.currentStep >= 3,
     },
   ];
 
@@ -268,19 +262,11 @@ const BillableWizard: React.FC = () => {
             onClientNameChange={(name: string) =>
               updateState({ clientName: name })
             }
-            onNext={handleNext}
-            clientsLoading={state.clientsLoading}
-            clientsError={state.clientsError}
-          />
-        );
-
-      case "initial-report":
-        return (
-          <InitialReportStep
-            clientName={state.clientName}
+            onGenerateReport={handleGenerateInitialReport}
             isLoading={state.isLoading}
             error={state.error}
-            onGenerateInitialReport={handleGenerateInitialReport}
+            clientsLoading={state.clientsLoading}
+            clientsError={state.clientsError}
           />
         );
 

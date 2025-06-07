@@ -1,23 +1,32 @@
-import React from 'react';
-import { BuildingOfficeIcon, ArrowRightIcon, ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
-import type { ApiClient } from '../../services/api'; // Assuming ApiClient is exported from api.ts
+import React from "react";
+import {
+  BuildingOfficeIcon,
+  ArrowRightIcon,
+  ExclamationTriangleIcon,
+  ArrowPathIcon,
+} from "@heroicons/react/24/outline";
+import type { ApiClient } from "../../services/api"; // Assuming ApiClient is exported from api.ts
 
 interface SelectClientStepProps {
   availableClients: ApiClient[];
   clientName: string;
   onClientNameChange: (name: string) => void;
-  onNext: () => void;
+  onGenerateReport: () => void;
   clientsLoading: boolean;
   clientsError: string | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const SelectClientStep: React.FC<SelectClientStepProps> = ({
   availableClients,
   clientName,
   onClientNameChange,
-  onNext,
+  onGenerateReport,
   clientsLoading,
   clientsError,
+  isLoading,
+  error,
 }) => {
   return (
     <div className="space-y-6">
@@ -42,10 +51,15 @@ const SelectClientStep: React.FC<SelectClientStepProps> = ({
         <div className="bg-red-50 border border-red-300 rounded-md p-4 max-w-md mx-auto">
           <div className="flex">
             <div className="flex-shrink-0">
-              <ExclamationTriangleIcon className="h-5 w-5 text-red-400" aria-hidden="true" />
+              <ExclamationTriangleIcon
+                className="h-5 w-5 text-red-400"
+                aria-hidden="true"
+              />
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">Error loading clients</h3>
+              <h3 className="text-sm font-medium text-red-800">
+                Error loading clients
+              </h3>
               <div className="mt-2 text-sm text-red-700">
                 <p>{clientsError}</p>
               </div>
@@ -78,7 +92,10 @@ const SelectClientStep: React.FC<SelectClientStepProps> = ({
               </option>
             ))}
           </select>
-          <p className="mt-2 text-xs text-gray-500" id="client-name-description">
+          <p
+            className="mt-2 text-xs text-gray-500"
+            id="client-name-description"
+          >
             Client name must match exactly as configured in the system.
           </p>
           {availableClients.length === 0 && !clientsLoading && (
@@ -89,15 +106,40 @@ const SelectClientStep: React.FC<SelectClientStepProps> = ({
         </div>
       )}
 
+      {error && (
+        <div className="bg-red-50 border border-red-300 rounded-md p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <ExclamationTriangleIcon
+                className="h-5 w-5 text-red-400"
+                aria-hidden="true"
+              />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="text-center pt-4">
         <button
           type="button"
-          onClick={onNext}
-          disabled={!clientName || clientsLoading || !!clientsError || availableClients.length === 0}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={onGenerateReport}
+          disabled={isLoading || !clientName}
+          className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Continue
-          <ArrowRightIcon className="ml-2 h-4 w-4" />
+          {isLoading ? (
+            <>
+              <ArrowPathIcon className="animate-spin -ml-1 mr-3 h-5 w-5" />
+              Generating Report...
+            </>
+          ) : (
+            <>
+              Generate Report
+              <ArrowRightIcon className="ml-2 h-4 w-4" />
+            </>
+          )}
         </button>
       </div>
     </div>

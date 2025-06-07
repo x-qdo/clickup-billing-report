@@ -25,7 +25,7 @@ const TaskDetails: React.FC<TaskDetailsProps> = ({
   }
 
   const getTaskName = (task: Task) => {
-    return "name" in task ? task.name : task.task_name;
+    return task.name;
   };
 
   const getHourValue = (task: Task) => {
