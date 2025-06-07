@@ -1,25 +1,52 @@
-FROM public.ecr.aws/docker/library/python:3.11-bullseye
+# --- Go Build Stage ---
+FROM public.ecr.aws/docker/library/golang:1.24-bullseye AS go-builder
+WORKDIR /clickup-billing-report
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 
-ENV POETRY_VERSION='1.8.3' \
-    POETRY_HOME=/etc/poetry \
-    PATH="/etc/poetry/bin:${PATH}" \
-    POETRY_VIRTUALENVS_CREATE=false
-WORKDIR /app
+ARG GOPRIVATE
+ENV GOPRIVATE=${GOPRIVATE}
 
-RUN apt-get update -qq;\
-    apt-get install -yq libxml2 libxslt1.1 libffi7 libssl1.1 python3-cryptography  &&\
-    apt-get clean -yqq &&\
-    rm -rf /var/lib/apt/lists/*
+# Copy Go module files first for caching
+COPY go.mod go.sum ./
+RUN GOPATH=/tmp GOPROXY=${GOPROXY} GOPRIVATE=${GOPRIVATE} go mod download
 
-RUN curl -sSL https://install.python-poetry.org | python3 - && \
-    poetry --version
+# Copy the rest of the Go source code and build
+# This includes the main.go and any other Go packages.
+COPY . .
+RUN go build -tags lambda.norpc -o main cmd/api_handler/main.go
 
-COPY --chown=nobody:nogroup pyproject.toml poetry.lock ./
-RUN poetry install --no-root --no-dev
+# --- Frontend Build Stage ---
+FROM public.ecr.aws/docker/library/node:20-bullseye AS fe-builder
+WORKDIR /app/frontend
 
-COPY --chown=nobody:nogroup . ./
+# Copy package.json and package-lock.json (if available) first to leverage Docker cache
+COPY frontend/package.json ./
+# If package-lock.json is not always present, you might need a more robust copy strategy
+# or ensure it's always committed. For now, assuming it exists.
+COPY frontend/package-lock.json ./
 
-CMD [ "poetry", "run", "gunicorn", "--conf", "gunicorn_conf.py", "--bind", "0.0.0.0:8080", "app:app"]
+# Install npm dependencies
+RUN npm install
 
-# Nobody
-USER 65534
+# Copy the rest of the frontend application code
+COPY frontend/ ./
+
+# Build the frontend application
+RUN npm run build
+# This stage will have the compiled assets in /app/frontend/dist
+
+# --- Final Application Stage ---
+# Use the AWS Lambda provided base image for Go
+FROM public.ecr.aws/lambda/provided:al2023 AS final
+ENV CONFIG_PATH "/"
+
+# Copy Go binary from the go-builder stage
+COPY --from=go-builder /clickup-billing-report/main /main
+
+# Copy compiled frontend assets from the fe-builder stage
+# The assets from /app/frontend/dist in fe-builder are copied to /dist in the final image.
+# This makes them available at /dist, sibling to the /main executable.
+COPY --from=fe-builder /app/frontend/dist /dist
+
+ENTRYPOINT [ "/main"]
