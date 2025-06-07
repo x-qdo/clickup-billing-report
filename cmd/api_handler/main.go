@@ -153,13 +153,8 @@ func serveAuthRequest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		log.Info("OAuth callback successful, redirecting to reports page")
-		// Redirect user to the main application page after successful login
-		// TODO: Make the redirect target configurable (e.g., from appConf.Global)
-		redirectTarget := "/report/timetrack" // Default redirect target
-		//if appConf.Global.AuthSuccessRedirectURL != "" {
-		//	redirectTarget = appConf.Global.AuthSuccessRedirectURL
-		//}
-		http.Redirect(w, r, redirectTarget, http.StatusFound) // Use standard http.Redirect
+		redirectTarget := "/"
+		http.Redirect(w, r, redirectTarget, http.StatusFound)
 
 	case "/auth/logout": // Handle logout
 		// Typically POST, but GET might be used for simple link-based logout
@@ -640,32 +635,22 @@ func main() {
 	mux.HandleFunc("/api/clients", serveClientsRequest)
 
 	// --- Serve Static Files (Frontend) ---
-	// The /dist/ path prefix is stripped before being handled by the FileServer.
-	// This means if a request comes in for /dist/index.html, the FileServer
-	// will look for ./dist/index.html relative to the executable.
-	// In the Docker container, the 'dist' directory (from frontend build)
-	// is copied to /dist, which is at the same level as the /main executable.
-	// So, when running in the container, it will serve files from /dist.
-	// When running locally (if you have a ./dist folder), it will serve from there.
-	fs := http.FileServer(http.Dir("./dist"))
-	mux.Handle("/dist/", http.StripPrefix("/dist/", fs))
+	// Serve static assets from /dist/assets for URLs starting with /assets/
+	// e.g. /assets/index.js will serve /dist/assets/index.js from the filesystem
+	assetsFs := http.FileServer(http.Dir("/dist/assets"))
+	mux.Handle("/assets/", http.StripPrefix("/assets/", assetsFs))
 
 	// Add a root handler for basic health check or info page
 	// This also acts as a catch-all for any routes not explicitly defined above.
 	// If a request is made to / (root), it serves the index.html from the dist folder.
 	// Otherwise, for any other unhandled path, it returns a 404.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			// If running in debug mode and accessing root, serve index.html from dist
-			// This is a common pattern for SPAs.
-			// Ensure your frontend router handles client-side routing appropriately.
-			http.ServeFile(w, r, "./dist/index.html")
-			log.Debug("Root path '/' accessed, serving ./dist/index.html")
-			return
-		}
-		// For any other path not matched by other handlers or static files, return 404.
-		http.NotFound(w, r)
-		log.Debugf("Path '%s' not found", r.URL.Path)
+		// If running in debug mode and accessing root, serve index.html from dist
+		// This is a common pattern for SPAs.
+		// Ensure your frontend router handles client-side routing appropriately.
+		http.ServeFile(w, r, "/dist/index.html")
+		log.Debug("Root path '/' accessed, serving ./dist/index.html")
+		return
 	})
 
 	// --- Start Server or Lambda ---
