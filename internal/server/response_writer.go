@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/base64"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -66,13 +67,16 @@ func (rw *HttpResponseWriter) ToAPIGatewayProxyResponse() events.APIGatewayProxy
 		logrus.WithField("finalStatusCode", finalStatusCode).Debug("WriteHeader never called, defaulting status code")
 	}
 
+	// Always base64 encode the response body for API Gateway
+	body := base64.StdEncoding.EncodeToString(rw.buffer.Bytes())
+
 	// Construct the response object
 	response := events.APIGatewayProxyResponse{
 		StatusCode:        finalStatusCode,
 		Headers:           convertMultiToSingleValueHeaders(multiValueHeaders),
 		MultiValueHeaders: multiValueHeaders,
-		Body:              rw.buffer.String(),
-		IsBase64Encoded:   false,
+		Body:              body,
+		IsBase64Encoded:   true,
 	}
 
 	return response
