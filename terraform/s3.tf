@@ -36,3 +36,15 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "jobs" {
     }
   }
 }
+
+resource "aws_s3_bucket_cors_configuration" "jobs" {
+  bucket = aws_s3_bucket.jobs.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "HEAD"]
+    allowed_origins = ["*"]
+    expose_headers  = ["Content-Disposition", "Content-Type", "Content-Length"]
+    max_age_seconds = 3600
+  }
+}
