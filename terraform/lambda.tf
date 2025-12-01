@@ -23,7 +23,7 @@ module "lambda_http" {
   image_uri      = "${aws_ecr_repository.clickup-report.repository_url}:${var.image_tag}-http"
 
   memory_size = 512
-  timeout     = 60
+  timeout     = 15
 
   environment_variables = local.lambda_env
 

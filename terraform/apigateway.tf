@@ -33,7 +33,7 @@ module "api_gateway" {
       integration = {
         uri                    = module.lambda_http.lambda_function_arn
         payload_format_version = "1.0"
-        timeout_milliseconds   = 59000
+        timeout_milliseconds   = 10000
       }
     }
 
