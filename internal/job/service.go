@@ -1,10 +1,10 @@
 package job
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
@@ -135,10 +135,11 @@ func (s *Service) UploadFileToS3(ctx context.Context, jobID, filename string, da
 	key := fmt.Sprintf("jobs/%s/%s", jobID, filename)
 
 	_, err := s.s3Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucketName),
-		Key:         aws.String(key),
-		Body:        bytesReader(data),
-		ContentType: aws.String(contentType),
+		Bucket:        aws.String(s.bucketName),
+		Key:           aws.String(key),
+		Body:          bytes.NewReader(data),
+		ContentLength: aws.Int64(int64(len(data))),
+		ContentType:   aws.String(contentType),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to S3: %w", err)
@@ -160,23 +161,4 @@ func (s *Service) UploadFileToS3(ctx context.Context, jobID, filename string, da
 	}).Debug("File uploaded to S3")
 
 	return presignedReq.URL, nil
-}
-
-// bytesReader wraps a byte slice to implement io.Reader
-func bytesReader(data []byte) *bytesReaderWrapper {
-	return &bytesReaderWrapper{data: data}
-}
-
-type bytesReaderWrapper struct {
-	data   []byte
-	offset int
-}
-
-func (r *bytesReaderWrapper) Read(p []byte) (n int, err error) {
-	if r.offset >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.offset:])
-	r.offset += n
-	return n, nil
 }
