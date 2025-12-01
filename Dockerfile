@@ -7,14 +7,26 @@ ENV GOPROXY=${GOPROXY}
 ARG GOPRIVATE
 ENV GOPRIVATE=${GOPRIVATE}
 
+# Build target: "http" (default) or "worker"
+ARG BUILD_TARGET=http
+
 # Copy Go module files first for caching
 COPY go.mod go.sum ./
 RUN GOPATH=/tmp GOPROXY=${GOPROXY} GOPRIVATE=${GOPRIVATE} go mod download
 
-# Copy the rest of the Go source code and build
-# This includes the main.go and any other Go packages.
+# Copy the rest of the Go source code
 COPY . .
-RUN go build -tags lambda.norpc -o main cmd/api_handler/main.go
+
+# Build both binaries
+RUN go build -tags lambda.norpc -o main_http cmd/api_handler/main.go
+RUN go build -tags lambda.norpc -o main_worker cmd/job_worker/main.go
+
+# Copy the appropriate binary based on BUILD_TARGET
+RUN if [ "$BUILD_TARGET" = "worker" ]; then \
+      cp main_worker main; \
+    else \
+      cp main_http main; \
+    fi
 
 # --- Frontend Build Stage ---
 FROM public.ecr.aws/docker/library/node:20-bullseye AS fe-builder

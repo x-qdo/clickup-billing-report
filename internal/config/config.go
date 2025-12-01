@@ -33,6 +33,11 @@ type DataStore interface {
 	GetSession(ctx context.Context, sessionID string) (*SessionState, error)
 	SaveSession(ctx context.Context, session SessionState) error
 	DeleteSession(ctx context.Context, sessionID string) error
+
+	// Job operations
+	GetJob(ctx context.Context, jobID string) (*Job, error)
+	SaveJob(ctx context.Context, job Job) error
+	UpdateJobStatus(ctx context.Context, jobID, status, output, errMsg string) error
 }
 
 // Common storage errors (can be defined here or elsewhere if needed broadly)
@@ -63,6 +68,7 @@ const (
 	DefaultDevelopersTableName = "ClickUpReporter-Developers"
 	DefaultSettingsTableName   = "ClickUpReporter-Settings"
 	DefaultSessionsTableName   = "ClickUpReporter-Sessions"
+	DefaultJobsTableName       = "ClickUpReporter-Jobs"
 	DefaultDebugPort           = "5000"
 )
 
@@ -124,6 +130,56 @@ type SessionState struct {
 	ExpiresAt    time.Time `dynamodbav:"ExpiresAt"`    // Token expiry
 	CreatedAt    time.Time `dynamodbav:"CreatedAt"`
 	TTL          int64     `dynamodbav:"TTL,omitempty"` // DynamoDB TTL attribute
+}
+
+// Job status constants
+const (
+	JobStatusPending   = "pending"
+	JobStatusRunning   = "running"
+	JobStatusCompleted = "completed"
+	JobStatusFailed    = "failed"
+)
+
+// Job type constants
+const (
+	JobTypeTimetrack = "timetrack"
+	JobTypeBillable  = "billable"
+)
+
+// Job represents an async job for report generation.
+type Job struct {
+	JobID     string    `dynamodbav:"JobID" json:"job_id"`
+	Type      string    `dynamodbav:"Type" json:"type"`
+	Status    string    `dynamodbav:"Status" json:"status"`
+	Input     string    `dynamodbav:"Input" json:"input,omitempty"`
+	Output    string    `dynamodbav:"Output,omitempty" json:"result,omitempty"`
+	Error     string    `dynamodbav:"Error,omitempty" json:"error,omitempty"`
+	UserID    string    `dynamodbav:"UserID" json:"user_id"`
+	CreatedAt time.Time `dynamodbav:"CreatedAt" json:"created_at"`
+	UpdatedAt time.Time `dynamodbav:"UpdatedAt" json:"updated_at"`
+	TTL       int64     `dynamodbav:"TTL,omitempty" json:"-"`
+}
+
+// TimetrackJobInput represents input parameters for a timetrack job.
+type TimetrackJobInput struct {
+	ReportDate      string `json:"report_date"`
+	RefreshBillable bool   `json:"refresh_billable"`
+	Format          string `json:"format"`
+	ClickUpToken    string `json:"clickup_token"`
+}
+
+// BillableJobInput represents input parameters for a billable job.
+type BillableJobInput struct {
+	ClientName      string `json:"client_name"`
+	RefreshInvoiced bool   `json:"refresh_invoiced"`
+	Format          string `json:"format"`
+	ClickUpToken    string `json:"clickup_token"`
+}
+
+// JobFileOutput represents the output when job produces a file (Excel).
+type JobFileOutput struct {
+	DownloadURL string `json:"download_url"`
+	Filename    string `json:"filename"`
 }
 
 // --- Report Structures ---

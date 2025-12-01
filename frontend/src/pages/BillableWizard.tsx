@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { apiService } from "../services/api";
+import { useAsyncJob, isJobFileResult } from "../hooks/useAsyncJob";
 import { CheckCircleIcon } from "@heroicons/react/24/outline";
 import SelectClientStep from "../components/billableWizard/SelectClientStep";
 import ReviewBillableStep from "../components/billableWizard/ReviewBillableStep";
 import MarkInvoicedStep from "../components/billableWizard/MarkInvoicedStep";
 import BillableCompleteStep from "../components/billableWizard/BillableCompleteStep";
+import JobProgress from "../components/shared/JobProgress";
 import type { ApiClient } from "../services/api";
 
 interface WizardStep {
@@ -45,6 +47,11 @@ const BillableWizard: React.FC = () => {
     clientsLoading: true,
     clientsError: null,
   });
+
+  // Async job hooks for report generation
+  const initialReportJob = useAsyncJob<BillableReportData>();
+  const finalReportJob = useAsyncJob<BillableReportData>();
+  const excelJob = useAsyncJob();
 
   const steps: WizardStep[] = [
     {
@@ -105,6 +112,57 @@ const BillableWizard: React.FC = () => {
     state.reportData,
   ]);
 
+  // Handle initial report job completion
+  useEffect(() => {
+    if (initialReportJob.status === "completed" && initialReportJob.result) {
+      updateState({
+        reportData: initialReportJob.result,
+        initialReportGenerated: true,
+        isLoading: false,
+        error: null,
+      });
+      setTimeout(() => handleNext(), 500);
+    } else if (initialReportJob.status === "failed") {
+      updateState({
+        isLoading: false,
+        error: initialReportJob.error || "Failed to generate report",
+      });
+    }
+  }, [initialReportJob.status, initialReportJob.result, initialReportJob.error]);
+
+  // Handle final report job completion
+  useEffect(() => {
+    if (finalReportJob.status === "completed" && finalReportJob.result) {
+      updateState({
+        reportData: finalReportJob.result,
+        finalReportGenerated: true,
+        isLoading: false,
+        error: null,
+      });
+      setTimeout(() => handleNext(), 500);
+    } else if (finalReportJob.status === "failed") {
+      updateState({
+        isLoading: false,
+        error: finalReportJob.error || "Failed to generate report",
+      });
+    }
+  }, [finalReportJob.status, finalReportJob.result, finalReportJob.error]);
+
+  // Handle Excel job completion
+  useEffect(() => {
+    if (excelJob.status === "completed" && excelJob.result) {
+      if (isJobFileResult(excelJob.result)) {
+        apiService.downloadFromUrl(excelJob.result.download_url, excelJob.result.filename);
+      }
+      updateState({ isLoading: false });
+    } else if (excelJob.status === "failed") {
+      updateState({
+        isLoading: false,
+        error: excelJob.error || "Failed to download Excel file",
+      });
+    }
+  }, [excelJob.status, excelJob.result, excelJob.error]);
+
   const updateState = (updates: Partial<WizardState>) => {
     setState((prevState) => ({ ...prevState, ...updates }));
   };
@@ -123,98 +181,44 @@ const BillableWizard: React.FC = () => {
 
   const handleGenerateInitialReport = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateBillableReport({
-        client_name: state.clientName,
-        refresh_invoiced: false,
-        format: "json",
-      });
-
-      updateState({
-        isLoading: false,
-        reportData: response.data,
-        initialReportGenerated: true,
-      });
-
-      // Auto-advance to next step
-      setTimeout(() => handleNext(), 500);
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error: error.response?.data?.message || "Failed to generate report",
-      });
-    }
+    await initialReportJob.startJob("billable", {
+      client_name: state.clientName,
+      refresh_invoiced: false,
+      format: "json",
+    });
   };
 
   const handleDownloadExcel = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateBillableReport({
-        client_name: state.clientName,
-        refresh_invoiced: false,
-        format: "excel",
-      });
-
-      const filename = `billable_report_${state.clientName.replace(/\s+/g, "_")}.xlsx`;
-      apiService.downloadFile(response.data, filename);
-
-      updateState({ isLoading: false });
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error: error.response?.data?.message || "Failed to download Excel file",
-      });
-    }
+    await excelJob.startJob("billable", {
+      client_name: state.clientName,
+      refresh_invoiced: false,
+      format: "excel",
+    });
   };
 
   const handleGenerateFinalReport = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateBillableReport({
-        client_name: state.clientName,
-        refresh_invoiced: true,
-        format: "json",
-      });
-
-      updateState({
-        isLoading: false,
-        reportData: response.data,
-        finalReportGenerated: true,
-      });
-
-      // Auto-advance to next step
-      setTimeout(() => handleNext(), 500);
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error:
-          error.response?.data?.message || "Failed to generate final report",
-      });
-    }
+    await finalReportJob.startJob("billable", {
+      client_name: state.clientName,
+      refresh_invoiced: true,
+      format: "json",
+    });
   };
 
   const handleDownloadFinalExcel = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateBillableReport({
-        client_name: state.clientName,
-        refresh_invoiced: true,
-        format: "excel",
-      });
-
-      const filename = `billable_report_final_${state.clientName.replace(/\s+/g, "_")}.xlsx`;
-      apiService.downloadFile(response.data, filename);
-
-      updateState({ isLoading: false });
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error: error.response?.data?.message || "Failed to download Excel file",
-      });
-    }
+    await excelJob.startJob("billable", {
+      client_name: state.clientName,
+      refresh_invoiced: true,
+      format: "excel",
+    });
   };
 
   const resetWizard = () => {
+    initialReportJob.reset();
+    finalReportJob.reset();
+    excelJob.reset();
     updateState({
       currentStep: 0,
       clientName: "",
@@ -226,6 +230,14 @@ const BillableWizard: React.FC = () => {
     });
     localStorage.removeItem("billableWizardState");
   };
+
+  // Determine if any job is in progress
+  const isJobInProgress =
+    initialReportJob.isLoading || finalReportJob.isLoading || excelJob.isLoading;
+  const currentJobStatus =
+    initialReportJob.status || finalReportJob.status || excelJob.status;
+  const currentJobElapsed =
+    initialReportJob.elapsedTime || finalReportJob.elapsedTime || excelJob.elapsedTime;
 
   // Fetch available clients on component mount
   useEffect(() => {
@@ -364,6 +376,17 @@ const BillableWizard: React.FC = () => {
           </ol>
         </nav>
       </div>
+
+      {/* Job Progress */}
+      {isJobInProgress && currentJobStatus && (
+        <div className="mb-6">
+          <JobProgress
+            status={currentJobStatus}
+            elapsedTime={currentJobElapsed}
+            error={state.error}
+          />
+        </div>
+      )}
 
       {/* Step Content */}
       <div className="bg-white shadow rounded-lg p-6">

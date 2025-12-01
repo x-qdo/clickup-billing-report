@@ -14,6 +14,35 @@ export interface ApiClient {
   updated_at: string;
 }
 
+// Job-related types
+export type JobType = "timetrack" | "billable";
+export type JobStatus = "pending" | "running" | "completed" | "failed";
+
+export interface JobCreateRequest {
+  type: JobType;
+  params: Record<string, unknown>;
+}
+
+export interface JobCreateResponse {
+  job_id: string;
+  status: JobStatus;
+}
+
+export interface JobStatusResponse {
+  job_id: string;
+  type: JobType;
+  status: JobStatus;
+  created_at: string;
+  updated_at: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface JobFileResult {
+  download_url: string;
+  filename: string;
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 class ApiService {
@@ -220,6 +249,28 @@ class ApiService {
       return error.message;
     }
     return "An unexpected error occurred";
+  }
+
+  // --- Job API Methods ---
+
+  // Create a new async job
+  async createJob(
+    type: JobType,
+    params: Record<string, unknown>,
+  ): Promise<AxiosResponse<JobCreateResponse>> {
+    return this.client.post<JobCreateResponse>("/api/jobs", { type, params });
+  }
+
+  // Get job status
+  async getJobStatus(jobId: string): Promise<AxiosResponse<JobStatusResponse>> {
+    return this.client.get<JobStatusResponse>(`/api/jobs/${jobId}`);
+  }
+
+  // Helper to download file from presigned URL
+  async downloadFromUrl(url: string, filename: string): Promise<void> {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    this.downloadFile(blob, filename);
   }
 }
 

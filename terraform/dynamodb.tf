@@ -58,3 +58,22 @@ resource "aws_dynamodb_table" "sessions" {
 
   tags = var.common_tags
 }
+
+resource "aws_dynamodb_table" "jobs" {
+  name         = var.jobs_table_name
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "JobID"
+
+  attribute {
+    name = "JobID"
+    type = "S"
+  }
+
+  ttl {
+    enabled        = true
+    attribute_name = "TTL"
+  }
+
+  tags = var.common_tags
+}

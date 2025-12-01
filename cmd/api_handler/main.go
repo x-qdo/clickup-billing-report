@@ -14,11 +14,13 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/sirupsen/logrus"
 
 	"github.com/x-qdo/clickup-billing-report/internal/auth"
 	"github.com/x-qdo/clickup-billing-report/internal/config"
+	"github.com/x-qdo/clickup-billing-report/internal/job"
 	"github.com/x-qdo/clickup-billing-report/internal/report"
 	"github.com/x-qdo/clickup-billing-report/internal/server"
 	"github.com/x-qdo/clickup-billing-report/internal/storage"
@@ -26,8 +28,9 @@ import (
 
 var authenticator *auth.Authenticator
 var reportService *report.Service
+var jobService *job.Service
 var appConf *config.AppConfig // Store loaded config
-// var demoService *demo.Service // Placeholder for demo service
+var awsCfg aws.Config
 
 // Initialize config and services once during cold start
 func init() {
@@ -35,7 +38,7 @@ func init() {
 	ctx := context.Background()
 
 	// Load AWS config first
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	awsCfg, err = awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		panic(fmt.Sprintf("FATAL: Failed to load AWS config: %v", err))
 	}
@@ -69,7 +72,7 @@ func init() {
 	// Initialize services with the loaded config
 	authenticator = auth.NewAuthenticator(appConf)
 	reportService = report.NewService(appConf)
-	// demoService = demo.NewService(appConf) // Uncomment when demo service exists
+	jobService = job.NewService(awsCfg, appConf.Store, appConf.Logger)
 	appConf.Logger.Info("API handler initialized successfully")
 }
 
@@ -379,6 +382,149 @@ func serveClientsRequest(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, clients)
 }
 
+// --- Job Handler Logic ---
+
+// JobCreateRequest represents the request body for creating a job.
+type JobCreateRequest struct {
+	Type   string                 `json:"type"`
+	Params map[string]interface{} `json:"params"`
+}
+
+// serveJobRequest handles job-related requests.
+func serveJobRequest(w http.ResponseWriter, r *http.Request) {
+	log := appConf.Logger.WithFields(logrus.Fields{
+		"method": r.Method,
+		"path":   r.URL.Path,
+	})
+
+	setCorsHeaders(w)
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Authentication check
+	session, token, err := authenticator.GetSessionFromRequest(r)
+	if err != nil {
+		log.WithError(err).Error("Failed to get session from request")
+		respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "SessionError", Message: "Could not process session"})
+		return
+	}
+	if session == nil || token == "" {
+		log.Warn("User not authenticated for job request")
+		respondWithJSON(w, http.StatusUnauthorized, server.ErrorResponse{Error: "Unauthorized", Message: "Authentication required"})
+		return
+	}
+
+	userLogger := log.WithField("user_id", session.UserID)
+
+	// Route based on path and method
+	if r.URL.Path == "/api/jobs" && r.Method == http.MethodPost {
+		handleCreateJob(w, r, token, session.UserID, userLogger)
+		return
+	}
+
+	// Handle GET /api/jobs/{id}
+	if strings.HasPrefix(r.URL.Path, "/api/jobs/") && r.Method == http.MethodGet {
+		jobID := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
+		if jobID == "" {
+			respondWithJSON(w, http.StatusBadRequest, server.ErrorResponse{Error: "InvalidRequest", Message: "Job ID required"})
+			return
+		}
+		handleGetJob(w, r, jobID, userLogger)
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func handleCreateJob(w http.ResponseWriter, r *http.Request, token, userID string, log *logrus.Entry) {
+	log.Info("Handling create job request")
+	ctx := r.Context()
+
+	var req JobCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.WithError(err).Error("Failed to decode job request body")
+		respondWithJSON(w, http.StatusBadRequest, server.ErrorResponse{Error: "InvalidRequest", Message: "Invalid request body"})
+		return
+	}
+
+	// Validate job type
+	if req.Type != config.JobTypeTimetrack && req.Type != config.JobTypeBillable {
+		respondWithJSON(w, http.StatusBadRequest, server.ErrorResponse{Error: "InvalidJobType", Message: "Job type must be 'timetrack' or 'billable'"})
+		return
+	}
+
+	// Add token to params for worker to use
+	if req.Params == nil {
+		req.Params = make(map[string]interface{})
+	}
+	req.Params["clickup_token"] = token
+
+	// Marshal input to JSON
+	inputJSON, err := json.Marshal(req.Params)
+	if err != nil {
+		log.WithError(err).Error("Failed to marshal job input")
+		respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "InternalError", Message: "Failed to create job"})
+		return
+	}
+
+	// Create the job
+	createdJob, err := jobService.CreateJob(ctx, req.Type, string(inputJSON), userID)
+	if err != nil {
+		log.WithError(err).Error("Failed to create job")
+		respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "JobCreationFailed", Message: fmt.Sprintf("Failed to create job: %v", err)})
+		return
+	}
+
+	log.WithField("job_id", createdJob.JobID).Info("Job created successfully")
+	respondWithJSON(w, http.StatusAccepted, map[string]interface{}{
+		"job_id": createdJob.JobID,
+		"status": createdJob.Status,
+	})
+}
+
+func handleGetJob(w http.ResponseWriter, r *http.Request, jobID string, log *logrus.Entry) {
+	log.WithField("job_id", jobID).Info("Handling get job request")
+	ctx := r.Context()
+
+	jobData, err := jobService.GetJob(ctx, jobID)
+	if err != nil {
+		if errors.Is(err, config.ErrNotFound) {
+			respondWithJSON(w, http.StatusNotFound, server.ErrorResponse{Error: "NotFound", Message: "Job not found"})
+			return
+		}
+		log.WithError(err).Error("Failed to get job")
+		respondWithJSON(w, http.StatusInternalServerError, server.ErrorResponse{Error: "InternalError", Message: "Failed to get job"})
+		return
+	}
+
+	// Build response based on job status
+	response := map[string]interface{}{
+		"job_id":     jobData.JobID,
+		"type":       jobData.Type,
+		"status":     jobData.Status,
+		"created_at": jobData.CreatedAt,
+		"updated_at": jobData.UpdatedAt,
+	}
+
+	if jobData.Status == config.JobStatusCompleted && jobData.Output != "" {
+		var result interface{}
+		if err := json.Unmarshal([]byte(jobData.Output), &result); err == nil {
+			response["result"] = result
+		} else {
+			response["result"] = jobData.Output
+		}
+	}
+
+	if jobData.Status == config.JobStatusFailed && jobData.Error != "" {
+		response["error"] = jobData.Error
+	}
+
+	respondWithJSON(w, http.StatusOK, response)
+}
+
 // parseHTTPFormParams extracts form parameters from an http.Request.
 // It handles both URL query parameters and form-urlencoded bodies.
 func parseHTTPFormParams(r *http.Request, log *logrus.Entry) (url.Values, error) {
@@ -633,6 +779,10 @@ func main() {
 
 	// Register API routes
 	mux.HandleFunc("/api/clients", serveClientsRequest)
+
+	// Register Job routes (async report processing)
+	mux.HandleFunc("/api/jobs", serveJobRequest)
+	mux.HandleFunc("/api/jobs/", serveJobRequest)
 
 	// --- Serve Static Files (Frontend) ---
 	// Serve static assets from /dist/assets for URLs starting with /assets/

@@ -22,6 +22,18 @@ variable "sessions_table_name" {
   default     = "ClickUpReporter-Sessions"
 }
 
+variable "jobs_table_name" {
+  description = "Name for the DynamoDB table storing async jobs."
+  type        = string
+  default     = "ClickUpReporter-Jobs"
+}
+
+variable "jobs_bucket_name" {
+  description = "Name for the S3 bucket storing job results (Excel files)."
+  type        = string
+  default     = "clickup-reporter-jobs"
+}
+
 variable "environment" {
   type    = string
   default = "prod"

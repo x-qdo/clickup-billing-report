@@ -1,17 +1,14 @@
 import { useState, useEffect } from "react";
 import { format, startOfMonth } from "date-fns";
 import { apiService } from "../services/api";
-import {
-  CheckCircleIcon,
-  // Unused icons can be removed if not needed by the main wizard layout anymore
-  // For now, keeping them to avoid breaking anything if they are used outside renderStepContent
-} from "@heroicons/react/24/outline";
+import { useAsyncJob, isJobFileResult } from "../hooks/useAsyncJob";
+import { CheckCircleIcon } from "@heroicons/react/24/outline";
 
 import SelectDateStep from "../components/timeTrackingWizard/SelectDateStep";
-// InitialReportStep is no longer used directly here
 import ReviewDataStep from "../components/timeTrackingWizard/ReviewDataStep";
 import FinalReportStep from "../components/timeTrackingWizard/FinalReportStep";
 import CompleteStep from "../components/timeTrackingWizard/CompleteStep";
+import JobProgress from "../components/shared/JobProgress";
 
 import type { TimeTrackingData } from "../types/api/timeTrackingTypes";
 
@@ -41,6 +38,11 @@ const TimeTrackingWizard: React.FC = () => {
     isLoading: false,
     error: null,
   });
+
+  // Async job hooks for report generation
+  const initialReportJob = useAsyncJob<TimeTrackingData>();
+  const finalReportJob = useAsyncJob<TimeTrackingData>();
+  const excelJob = useAsyncJob();
 
   const steps: WizardStep[] = [
     {
@@ -104,6 +106,57 @@ const TimeTrackingWizard: React.FC = () => {
     state.reportData,
   ]);
 
+  // Handle initial report job completion
+  useEffect(() => {
+    if (initialReportJob.status === "completed" && initialReportJob.result) {
+      updateState({
+        reportData: initialReportJob.result,
+        initialReportGenerated: true,
+        isLoading: false,
+        error: null,
+      });
+      setTimeout(() => handleNext(), 500);
+    } else if (initialReportJob.status === "failed") {
+      updateState({
+        isLoading: false,
+        error: initialReportJob.error || "Failed to generate report",
+      });
+    }
+  }, [initialReportJob.status, initialReportJob.result, initialReportJob.error]);
+
+  // Handle final report job completion
+  useEffect(() => {
+    if (finalReportJob.status === "completed" && finalReportJob.result) {
+      updateState({
+        reportData: finalReportJob.result,
+        finalReportGenerated: true,
+        isLoading: false,
+        error: null,
+      });
+      setTimeout(() => handleNext(), 500);
+    } else if (finalReportJob.status === "failed") {
+      updateState({
+        isLoading: false,
+        error: finalReportJob.error || "Failed to generate report",
+      });
+    }
+  }, [finalReportJob.status, finalReportJob.result, finalReportJob.error]);
+
+  // Handle Excel job completion
+  useEffect(() => {
+    if (excelJob.status === "completed" && excelJob.result) {
+      if (isJobFileResult(excelJob.result)) {
+        apiService.downloadFromUrl(excelJob.result.download_url, excelJob.result.filename);
+      }
+      updateState({ isLoading: false });
+    } else if (excelJob.status === "failed") {
+      updateState({
+        isLoading: false,
+        error: excelJob.error || "Failed to download Excel file",
+      });
+    }
+  }, [excelJob.status, excelJob.result, excelJob.error]);
+
   const updateState = (updates: Partial<WizardState>) => {
     setState((prevState) => ({ ...prevState, ...updates }));
   };
@@ -122,98 +175,44 @@ const TimeTrackingWizard: React.FC = () => {
 
   const handleGenerateInitialReport = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateTimeTrackingReport({
-        report_date: state.reportDate,
-        refresh_billable: false,
-        format: "json",
-      });
-
-      updateState({
-        isLoading: false,
-        reportData: response.data,
-        initialReportGenerated: true,
-      });
-
-      // Auto-advance to next step
-      setTimeout(() => handleNext(), 500);
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error: error.response?.data?.message || "Failed to generate report",
-      });
-    }
+    await initialReportJob.startJob("timetrack", {
+      report_date: state.reportDate,
+      refresh_billable: false,
+      format: "json",
+    });
   };
 
   const handleDownloadExcel = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateTimeTrackingReport({
-        report_date: state.reportDate,
-        refresh_billable: false,
-        format: "excel",
-      });
-
-      const filename = `time_tracking_report_${state.reportDate}.xlsx`;
-      apiService.downloadFile(response.data, filename);
-
-      updateState({ isLoading: false });
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error: error.response?.data?.message || "Failed to download Excel file",
-      });
-    }
+    await excelJob.startJob("timetrack", {
+      report_date: state.reportDate,
+      refresh_billable: false,
+      format: "excel",
+    });
   };
 
   const handleGenerateFinalReport = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateTimeTrackingReport({
-        report_date: state.reportDate,
-        refresh_billable: true,
-        format: "json",
-      });
-
-      updateState({
-        isLoading: false,
-        reportData: response.data,
-        finalReportGenerated: true,
-      });
-
-      // Auto-advance to next step
-      setTimeout(() => handleNext(), 500);
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error:
-          error.response?.data?.message || "Failed to generate final report",
-      });
-    }
+    await finalReportJob.startJob("timetrack", {
+      report_date: state.reportDate,
+      refresh_billable: true,
+      format: "json",
+    });
   };
 
   const handleDownloadFinalExcel = async () => {
     updateState({ isLoading: true, error: null });
-    try {
-      const response = await apiService.generateTimeTrackingReport({
-        report_date: state.reportDate,
-        refresh_billable: true,
-        format: "excel",
-      });
-
-      const filename = `time_tracking_report_final_${state.reportDate}.xlsx`;
-      apiService.downloadFile(response.data, filename);
-
-      updateState({ isLoading: false });
-    } catch (error: any) {
-      updateState({
-        isLoading: false,
-        error: error.response?.data?.message || "Failed to download Excel file",
-      });
-    }
+    await excelJob.startJob("timetrack", {
+      report_date: state.reportDate,
+      refresh_billable: true,
+      format: "excel",
+    });
   };
 
   const resetWizard = () => {
+    initialReportJob.reset();
+    finalReportJob.reset();
+    excelJob.reset();
     updateState({
       currentStep: 0,
       reportDate: format(startOfMonth(new Date()), "yyyy-MM"),
@@ -225,6 +224,14 @@ const TimeTrackingWizard: React.FC = () => {
     });
     localStorage.removeItem("timeTrackingWizardState");
   };
+
+  // Determine if any job is in progress
+  const isJobInProgress =
+    initialReportJob.isLoading || finalReportJob.isLoading || excelJob.isLoading;
+  const currentJobStatus =
+    initialReportJob.status || finalReportJob.status || excelJob.status;
+  const currentJobElapsed =
+    initialReportJob.elapsedTime || finalReportJob.elapsedTime || excelJob.elapsedTime;
 
   const renderStepContent = () => {
     const currentStepData = steps[state.currentStep];
@@ -335,6 +342,17 @@ const TimeTrackingWizard: React.FC = () => {
           </ol>
         </nav>
       </div>
+
+      {/* Job Progress */}
+      {isJobInProgress && currentJobStatus && (
+        <div className="mb-6">
+          <JobProgress
+            status={currentJobStatus}
+            elapsedTime={currentJobElapsed}
+            error={state.error}
+          />
+        </div>
+      )}
 
       {/* Step Content */}
       <div className="bg-white shadow rounded-lg p-6">

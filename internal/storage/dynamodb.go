@@ -20,6 +20,7 @@ type DynamoDBStore struct {
 	developersTable string
 	settingsTable   string
 	sessionsTable   string
+	jobsTable       string
 	log             *logrus.Entry
 }
 
@@ -36,6 +37,7 @@ func NewDynamoDBStore(awsCfg aws.Config, logger *logrus.Logger) (config.DataStor
 		developersTable: config.GetTableName("DYNAMODB_DEVELOPERS_TABLE", config.DefaultDevelopersTableName),
 		settingsTable:   config.GetTableName("DYNAMODB_SETTINGS_TABLE", config.DefaultSettingsTableName),
 		sessionsTable:   config.GetTableName("DYNAMODB_SESSIONS_TABLE", config.DefaultSessionsTableName),
+		jobsTable:       config.GetTableName("DYNAMODB_JOBS_TABLE", config.DefaultJobsTableName),
 		log:             logEntry,
 	}
 	logEntry.WithFields(logrus.Fields{
@@ -43,6 +45,7 @@ func NewDynamoDBStore(awsCfg aws.Config, logger *logrus.Logger) (config.DataStor
 		"developersTable": store.developersTable,
 		"settingsTable":   store.settingsTable,
 		"sessionsTable":   store.sessionsTable,
+		"jobsTable":       store.jobsTable,
 	}).Info("DynamoDB table names configured")
 
 	return store, nil
@@ -447,5 +450,117 @@ func (s *DynamoDBStore) DeleteSession(ctx context.Context, sessionID string) err
 	}
 
 	s.log.Debug("Session deleted successfully")
+	return nil
+}
+
+// --- Job Operations ---
+
+func (s *DynamoDBStore) GetJob(ctx context.Context, jobID string) (*config.Job, error) {
+	s.log.WithField("job_id", jobID).Debug("Getting job")
+	key, err := attributevalue.Marshal(jobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal job key: %w", err)
+	}
+
+	input := &dynamodb.GetItemInput{
+		TableName: aws.String(s.jobsTable),
+		Key:       map[string]types.AttributeValue{"JobID": key},
+	}
+
+	result, err := s.client.GetItem(ctx, input)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get job from DynamoDB")
+		return nil, fmt.Errorf("failed to get job item: %w", err)
+	}
+
+	if result.Item == nil {
+		s.log.WithField("job_id", jobID).Warn("Job not found")
+		return nil, config.ErrNotFound
+	}
+
+	var job config.Job
+	err = attributevalue.UnmarshalMap(result.Item, &job)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to unmarshal job data")
+		return nil, fmt.Errorf("failed to unmarshal job item: %w", err)
+	}
+
+	s.log.WithField("job_id", jobID).Debug("Job retrieved successfully")
+	return &job, nil
+}
+
+func (s *DynamoDBStore) SaveJob(ctx context.Context, job config.Job) error {
+	s.log.WithField("job_id", job.JobID).Debug("Saving job")
+
+	av, err := attributevalue.MarshalMap(job)
+	if err != nil {
+		return fmt.Errorf("failed to marshal job: %w", err)
+	}
+
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(s.jobsTable),
+		Item:      av,
+	}
+
+	_, err = s.client.PutItem(ctx, input)
+	if err != nil {
+		s.log.WithError(err).WithField("job_id", job.JobID).Error("Failed to save job")
+		return fmt.Errorf("failed to put job item: %w", err)
+	}
+
+	s.log.WithField("job_id", job.JobID).Debug("Job saved successfully")
+	return nil
+}
+
+func (s *DynamoDBStore) UpdateJobStatus(ctx context.Context, jobID, status, output, errMsg string) error {
+	s.log.WithFields(logrus.Fields{
+		"job_id": jobID,
+		"status": status,
+	}).Debug("Updating job status")
+
+	key, err := attributevalue.Marshal(jobID)
+	if err != nil {
+		return fmt.Errorf("failed to marshal job key: %w", err)
+	}
+
+	updateExpr := "SET #status = :status, UpdatedAt = :updated"
+	exprAttrNames := map[string]string{
+		"#status": "Status",
+	}
+	exprAttrValues := map[string]types.AttributeValue{
+		":status":  &types.AttributeValueMemberS{Value: status},
+		":updated": &types.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
+	}
+
+	if output != "" {
+		updateExpr += ", #output = :output"
+		exprAttrNames["#output"] = "Output"
+		exprAttrValues[":output"] = &types.AttributeValueMemberS{Value: output}
+	}
+
+	if errMsg != "" {
+		updateExpr += ", #error = :error"
+		exprAttrNames["#error"] = "Error"
+		exprAttrValues[":error"] = &types.AttributeValueMemberS{Value: errMsg}
+	}
+
+	input := &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(s.jobsTable),
+		Key:                       map[string]types.AttributeValue{"JobID": key},
+		UpdateExpression:          aws.String(updateExpr),
+		ExpressionAttributeNames:  exprAttrNames,
+		ExpressionAttributeValues: exprAttrValues,
+	}
+
+	_, err = s.client.UpdateItem(ctx, input)
+	if err != nil {
+		s.log.WithError(err).WithField("job_id", jobID).Error("Failed to update job status")
+		return fmt.Errorf("failed to update job item: %w", err)
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"job_id": jobID,
+		"status": status,
+	}).Debug("Job status updated successfully")
 	return nil
 }
